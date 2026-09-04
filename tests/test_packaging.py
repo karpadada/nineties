@@ -43,6 +43,7 @@ def test_homebrew_formula_has_main_branch_head() -> None:
         'head "https://github.com/karpadada/nineties.git", branch: "main"'
         in formula
     )
+    assert '(bin/"nineties").write_env_script' in formula
 
 
 def test_remote_runner_refreshes_tap_and_installs_head(tmp_path: Path) -> None:
@@ -93,8 +94,66 @@ def test_remote_runner_refreshes_tap_and_installs_head(tmp_path: Path) -> None:
         "tap",
         "list --versions karpadada/nineties/nineties",
         "update",
-        "list --versions karpadada/nineties/nineties",
         "install --HEAD karpadada/nineties/nineties",
+        "--prefix karpadada/nineties/nineties",
+    ]
+    assert app_log.read_text(encoding="utf-8").splitlines() == ["--version"]
+
+
+def test_remote_runner_repairs_legacy_install_without_executable(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    prefix = tmp_path / "prefix"
+    prefix.mkdir()
+    brew_log = tmp_path / "brew.log"
+    app_log = tmp_path / "app.log"
+    app_source = tmp_path / "nineties"
+    app_source.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_APP_LOG\"\n",
+        encoding="utf-8",
+    )
+    app_source.chmod(0o755)
+
+    fake_brew = fake_bin / "brew"
+    fake_brew.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_BREW_LOG\"\n"
+        "if [ \"$*\" = 'tap' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties'\n"
+        "elif [ \"$1\" = '--prefix' ]; then\n"
+        "  printf '%s\\n' \"$FAKE_BREW_PREFIX\"\n"
+        "elif [ \"$1\" = 'reinstall' ]; then\n"
+        "  mkdir -p \"$FAKE_BREW_PREFIX/bin\"\n"
+        "  cp \"$FAKE_APP_SOURCE\" \"$FAKE_BREW_PREFIX/bin/nineties\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_brew.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "FAKE_BREW_LOG": str(brew_log),
+            "FAKE_BREW_PREFIX": str(prefix),
+            "FAKE_APP_LOG": str(app_log),
+            "FAKE_APP_SOURCE": str(app_source),
+        }
+    )
+
+    subprocess.run(
+        [ROOT / "run.sh", "--version"], check=True, env=environment
+    )
+
+    assert brew_log.read_text(encoding="utf-8").splitlines() == [
+        "tap",
+        "list --versions karpadada/nineties/nineties",
+        "--prefix karpadada/nineties/nineties",
+        "update",
+        "reinstall --HEAD karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
     ]
     assert app_log.read_text(encoding="utf-8").splitlines() == ["--version"]

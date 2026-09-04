@@ -1,7 +1,7 @@
 class Nineties < Formula
   desc "Local YouTube Music browser and MP3 collection manager"
   homepage "https://github.com/karpadada/nineties"
-  url "https://github.com/karpadada/nineties.git", tag: "v0.4.2"
+  url "https://github.com/karpadada/nineties.git", tag: "v0.4.3"
   license "MIT"
   head "https://github.com/karpadada/nineties.git", branch: "main"
 
@@ -21,10 +21,10 @@ class Nineties < Formula
       formula_opt_bin("deno"),
       "$PATH",
     ].join(":")
-    bin.write_env_script libexec/"nineties",
-                         NINETIES_BREW_FORMULA: "karpadada/nineties/nineties",
-                         NINETIES_PACKAGE_ROOT: libexec,
-                         PATH:                  runtime_path
+    (bin/"nineties").write_env_script libexec/"nineties",
+                                        NINETIES_BREW_FORMULA: "karpadada/nineties/nineties",
+                                        NINETIES_PACKAGE_ROOT: libexec,
+                                        PATH:                  runtime_path
   end
 
   test do

@@ -15,15 +15,26 @@ EOF
   exit 127
 fi
 
+installed=false
 if ! brew tap | grep -Fxq "$tap"; then
   brew tap "$tap" "$repository_url"
-elif ! brew list --versions "$formula" >/dev/null 2>&1; then
+elif brew list --versions "$formula" >/dev/null 2>&1; then
+  installed=true
+else
   # Refresh a tap left behind by an earlier failed installation.
   brew update
 fi
 
-if ! brew list --versions "$formula" >/dev/null 2>&1; then
+if [ "$installed" = false ]; then
   brew install --HEAD "$formula"
 fi
 
-exec "$(brew --prefix "$formula")/bin/nineties" "$@"
+executable="$(brew --prefix "$formula")/bin/nineties"
+if [ ! -x "$executable" ]; then
+  # Repair the 0.4.2 formula, which created a file named bin instead of this executable.
+  brew update
+  brew reinstall --HEAD "$formula"
+  executable="$(brew --prefix "$formula")/bin/nineties"
+fi
+
+exec "$executable" "$@"
