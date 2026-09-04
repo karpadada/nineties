@@ -5,6 +5,22 @@ playlists and copying them to an MP3-player-friendly music directory. Discovery
 uses `ytmusicapi`; downloads, conversion, metadata, and cover art are handled by
 `yt-dlp` and FFmpeg.
 
+## Run Nineties
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/karpadada/nineties/main/run.sh | sh
+```
+
+Open <http://127.0.0.1:4310>. The repository's `run.sh` uses Homebrew to install
+Nineties when needed, then starts it.
+
+Optionally, install the plugin for every supported AI agent already on your
+computer:
+
+```sh
+nineties plugins install all
+```
+
 The interface has no stylesheet. It is intended to feel like a small, useful
 website from the 1990s: headings, forms, tables, links, and status text.
 
@@ -28,7 +44,7 @@ No separate Python, uv, `yt-dlp`, FFmpeg, or JavaScript runtime installation is
 required. The Homebrew formula provides the complete runtime toolchain,
 including Deno for `yt-dlp`'s YouTube JavaScript challenge handling.
 
-## Install and run
+## Manual installation
 
 Install Nineties directly from its GitHub-hosted Homebrew tap:
 
