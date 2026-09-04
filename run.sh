@@ -17,10 +17,13 @@ fi
 
 if ! brew tap | grep -Fxq "$tap"; then
   brew tap "$tap" "$repository_url"
+elif ! brew list --versions "$formula" >/dev/null 2>&1; then
+  # Refresh a tap left behind by an earlier failed installation.
+  brew update
 fi
 
 if ! brew list --versions "$formula" >/dev/null 2>&1; then
-  brew install "$formula"
+  brew install --HEAD "$formula"
 fi
 
 exec "$(brew --prefix "$formula")/bin/nineties" "$@"

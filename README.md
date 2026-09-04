@@ -50,7 +50,7 @@ Install Nineties directly from its GitHub-hosted Homebrew tap:
 
 ```sh
 brew tap karpadada/nineties https://github.com/karpadada/nineties.git
-brew install karpadada/nineties/nineties
+brew install --HEAD karpadada/nineties/nineties
 nineties
 ```
 

@@ -1,8 +1,9 @@
 class Nineties < Formula
   desc "Local YouTube Music browser and MP3 collection manager"
   homepage "https://github.com/karpadada/nineties"
-  url "https://github.com/karpadada/nineties.git", tag: "v0.4.1"
+  url "https://github.com/karpadada/nineties.git", tag: "v0.4.2"
   license "MIT"
+  head "https://github.com/karpadada/nineties.git", branch: "main"
 
   depends_on "deno"
   depends_on "ffmpeg"
@@ -27,7 +28,8 @@ class Nineties < Formula
   end
 
   test do
-    assert_match version.to_s, shell_output("#{bin}/nineties --version")
+    project_version = (libexec/"pyproject.toml").read[/^version = "([^"]+)"/, 1]
+    assert_equal "nineties #{project_version}\n", shell_output("#{bin}/nineties --version")
     assert_match "nineties plugins install", shell_output("#{bin}/nineties --help")
   end
 end

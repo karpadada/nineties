@@ -232,7 +232,7 @@ update_application() {
   fi
 
   brew update
-  brew upgrade "$brew_formula"
+  brew upgrade --fetch-HEAD "$brew_formula"
 
   local updated_executable
   updated_executable="$(brew --prefix "$brew_formula")/bin/nineties"

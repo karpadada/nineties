@@ -36,6 +36,70 @@ def test_release_versions_match_application() -> None:
     assert len(versions) == 1
 
 
+def test_homebrew_formula_has_main_branch_head() -> None:
+    formula = (ROOT / "Formula/nineties.rb").read_text(encoding="utf-8")
+
+    assert (
+        'head "https://github.com/karpadada/nineties.git", branch: "main"'
+        in formula
+    )
+
+
+def test_remote_runner_refreshes_tap_and_installs_head(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    brew_log = tmp_path / "brew.log"
+    app_log = tmp_path / "app.log"
+
+    fake_brew = fake_bin / "brew"
+    fake_brew.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_BREW_LOG\"\n"
+        "if [ \"$*\" = 'tap' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties'\n"
+        "elif [ \"$1\" = 'list' ]; then\n"
+        "  exit 1\n"
+        "elif [ \"$1\" = '--prefix' ]; then\n"
+        "  printf '%s\\n' \"$FAKE_BREW_PREFIX\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_brew.chmod(0o755)
+    fake_app = prefix / "bin/nineties"
+    fake_app.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_APP_LOG\"\n",
+        encoding="utf-8",
+    )
+    fake_app.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "FAKE_BREW_LOG": str(brew_log),
+            "FAKE_BREW_PREFIX": str(prefix),
+            "FAKE_APP_LOG": str(app_log),
+        }
+    )
+
+    subprocess.run(
+        [ROOT / "run.sh", "--version"], check=True, env=environment
+    )
+
+    assert brew_log.read_text(encoding="utf-8").splitlines() == [
+        "tap",
+        "list --versions karpadada/nineties/nineties",
+        "update",
+        "list --versions karpadada/nineties/nineties",
+        "install --HEAD karpadada/nineties/nineties",
+        "--prefix karpadada/nineties/nineties",
+    ]
+    assert app_log.read_text(encoding="utf-8").splitlines() == ["--version"]
+
+
 def test_marketplaces_publish_the_repository_root_plugin() -> None:
     codex = _json(".agents/plugins/marketplace.json")
     claude = _json(".claude-plugin/marketplace.json")
@@ -275,7 +339,7 @@ def test_update_hands_off_to_new_homebrew_executable(tmp_path: Path) -> None:
     assert brew_log.read_text(encoding="utf-8").splitlines() == [
         "list --versions karpadada/nineties/nineties",
         "update",
-        "upgrade karpadada/nineties/nineties",
+        "upgrade --fetch-HEAD karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
     ]
     assert handoff_log.read_text(encoding="utf-8").splitlines() == [
