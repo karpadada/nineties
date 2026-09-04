@@ -33,7 +33,7 @@ executable="$(brew --prefix "$formula")/bin/nineties"
 if [ ! -x "$executable" ]; then
   # Repair the 0.4.2 formula, which created a file named bin instead of this executable.
   brew update
-  brew reinstall --HEAD "$formula"
+  brew reinstall "$formula"
   executable="$(brew --prefix "$formula")/bin/nineties"
 fi
 

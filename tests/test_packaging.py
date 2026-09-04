@@ -153,7 +153,7 @@ def test_remote_runner_repairs_legacy_install_without_executable(
         "list --versions karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
         "update",
-        "reinstall --HEAD karpadada/nineties/nineties",
+        "reinstall karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
     ]
     assert app_log.read_text(encoding="utf-8").splitlines() == ["--version"]
