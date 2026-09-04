@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import re
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -133,6 +135,16 @@ class LibraryStore:
         except sqlite3.Error as exc:
             raise ManifestError(f"Could not open {self.database_path}: {exc}") from exc
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        """Provide a transactional connection and always release its file handles."""
+        connection = self._connect()
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
     def _initialize(self) -> None:
         connection = self._connect()
         try:
@@ -159,7 +171,7 @@ class LibraryStore:
 
     def recover_expired_operations(self) -> None:
         now = utc_now()
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 UPDATE collections
@@ -190,28 +202,28 @@ class LibraryStore:
             )
 
     def all(self) -> list[dict[str, Any]]:
-        with self._connect() as connection:
+        with self._connection() as connection:
             rows = connection.execute(
                 "SELECT * FROM collections ORDER BY created_at, rowid"
             ).fetchall()
             return [self._row_to_collection(connection, row) for row in rows]
 
     def get(self, collection_id: str) -> dict[str, Any] | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM collections WHERE id = ?", (collection_id,)
             ).fetchone()
             return self._row_to_collection(connection, row) if row else None
 
     def find_by_source(self, source_id: str) -> dict[str, Any] | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM collections WHERE source_id = ?", (source_id,)
             ).fetchone()
             return self._row_to_collection(connection, row) if row else None
 
     def find_by_directory(self, directory: str) -> dict[str, Any] | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM collections WHERE directory = ?", (directory,)
             ).fetchone()
@@ -220,7 +232,7 @@ class LibraryStore:
     def queued_ids(self, limit: int) -> list[str]:
         if limit < 1:
             return []
-        with self._connect() as connection:
+        with self._connection() as connection:
             return [
                 str(row[0])
                 for row in connection.execute(
@@ -348,7 +360,7 @@ class LibraryStore:
 
     def fail_queued(self, collection_id: str, error: str) -> bool:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 changed = connection.execute(
                     """
                     UPDATE collections
@@ -369,7 +381,7 @@ class LibraryStore:
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
     ) -> bool:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 changed = connection.execute(
                     """
                     UPDATE collections SET lease_expires_at = ?
@@ -496,7 +508,7 @@ class LibraryStore:
             connection.close()
 
     def finish_removal(self, collection_id: str, worker_token: str) -> bool:
-        with self._connect() as connection:
+        with self._connection() as connection:
             changed = connection.execute(
                 """
                 DELETE FROM collections
@@ -512,7 +524,7 @@ class LibraryStore:
         worker_token: str,
         previous_status: str,
     ) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 UPDATE collections
@@ -524,7 +536,7 @@ class LibraryStore:
             )
 
     def remove_record(self, collection_id: str) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             changed = connection.execute(
                 "DELETE FROM collections WHERE id = ?", (collection_id,)
             )

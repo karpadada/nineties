@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import multiprocessing
+import sqlite3
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -451,6 +452,32 @@ def test_store_reconciliation_and_interrupted_recovery(tmp_path: Path) -> None:
     assert reopened.reconciled(recovered)["integrity"] == "available"
     file_path.unlink()
     assert reopened.reconciled(recovered)["integrity"] == "incomplete"
+
+
+def test_store_closes_short_lived_connections(tmp_path: Path, monkeypatch) -> None:
+    real_connect = sqlite3.connect
+    opened_connections = []
+
+    class TrackingConnection(sqlite3.Connection):
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+            super().close()
+
+    def tracking_connect(*args, **kwargs):
+        connection = real_connect(*args, factory=TrackingConnection, **kwargs)
+        opened_connections.append(connection)
+        return connection
+
+    monkeypatch.setattr("nineties_music.store.sqlite3.connect", tracking_connect)
+    store = LibraryStore(tmp_path / "state", tmp_path / "music")
+    opened_connections.clear()
+
+    assert store.all() == []
+
+    assert len(opened_connections) == 1
+    assert opened_connections[0].closed is True
 
 
 def test_store_can_read_active_jobs_without_marking_them_interrupted(
