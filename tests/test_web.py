@@ -5,7 +5,8 @@ from pathlib import Path
 from nineties_music.config import AppConfig
 from nineties_music.discovery import DiscoveryError
 from nineties_music.downloader import DownloadManager, YtDlpDownloader
-from nineties_music.store import LibraryStore
+from nineties_music.storage import StorageError
+from nineties_music.store import LibraryStore, ManifestError
 from nineties_music.web import create_app
 
 
@@ -483,6 +484,75 @@ def test_safely_remove_route_ejects_player(tmp_path: Path, monkeypatch) -> None:
     assert response.status_code == 200
     assert b"Music storage safely removed" in response.data
     assert len(calls) == 1
+    unavailable = app.test_client().get("/api/jobs")
+    assert unavailable.status_code == 503
+    assert unavailable.get_json() == {"jobs": [], "storage_available": False}
+
+
+def test_job_poll_handles_storage_disappearing_during_request(
+    tmp_path: Path, monkeypatch
+) -> None:
+    player = tmp_path / "Music"
+    player.mkdir()
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=player / "Music",
+        state_dir=player / ".nineties-music",
+        player_volume=player,
+        require_player_volume=True,
+    )
+    app = create_app(config, discovery=FakeDiscovery(), start_worker=False)  # type: ignore[arg-type]
+    app.testing = True
+    manager = app.extensions["download_manager"]
+    monkeypatch.setattr(
+        manager,
+        "jobs",
+        lambda: (_ for _ in ()).throw(ManifestError("device disappeared")),
+    )
+
+    response = app.test_client().get("/api/jobs")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"jobs": [], "storage_available": False}
+
+
+def test_failed_safe_remove_restores_storage_availability(
+    tmp_path: Path, monkeypatch
+) -> None:
+    player = tmp_path / "Music"
+    player.mkdir()
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=player / "Music",
+        state_dir=player / ".nineties-music",
+        player_volume=player,
+        require_player_volume=True,
+    )
+    app = create_app(config, discovery=FakeDiscovery(), start_worker=False)  # type: ignore[arg-type]
+    app.testing = True
+    monkeypatch.setattr(
+        "nineties_music.web.safely_remove_player",
+        lambda *_args: (_ for _ in ()).throw(StorageError("device is busy")),
+    )
+
+    failed = app.test_client().post(
+        "/storage/safely-remove", data=csrf_form(app)
+    )
+    available = app.test_client().get("/api/jobs")
+
+    assert failed.status_code == 409
+    assert b"device is busy" in failed.data
+    assert available.status_code == 200
+
+
+def test_job_poll_script_stops_after_storage_is_unavailable(tmp_path: Path) -> None:
+    app, _ = make_app(tmp_path)
+
+    response = app.test_client().get("/static/jobs.js")
+
+    assert response.status_code == 200
+    assert b"response.status === 503" in response.data
+    assert b"Music storage is disconnected." in response.data
 
 
 def test_request_body_limit_and_security_headers(tmp_path: Path) -> None:

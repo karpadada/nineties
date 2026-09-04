@@ -39,14 +39,23 @@
   function poll() {
     fetch(container.dataset.jobsUrl, {headers: {"Accept": "application/json"}})
       .then(function (response) {
+        if (response.status === 503) {
+          container.replaceChildren();
+          var unavailable = document.createElement("p");
+          unavailable.appendChild(text("Music storage is disconnected."));
+          container.appendChild(unavailable);
+          return null;
+        }
         if (!response.ok) throw new Error("status request failed");
         return response.json();
       })
-      .then(render)
-      .catch(function () {})
-      .finally(function () { window.setTimeout(poll, 2000); });
+      .then(function (data) {
+        if (data === null) return;
+        render(data);
+        window.setTimeout(poll, 2000);
+      })
+      .catch(function () { window.setTimeout(poll, 2000); });
   }
 
   window.setTimeout(poll, 500);
 }());
-

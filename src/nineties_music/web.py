@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -142,10 +143,15 @@ def create_app(
     app.extensions["library_store"] = library_store
     app.extensions["music_discovery"] = music_discovery
     app.extensions["download_manager"] = download_manager
+    storage_unavailable = threading.Event()
 
     def player_storage_available() -> bool:
-        return not config.require_player_volume or (
-            config.player_volume is not None and config.player_volume.is_dir()
+        if config.player_volume is None:
+            return not config.require_player_volume
+        return (
+            not storage_unavailable.is_set()
+            and config.player_volume.is_dir()
+            and config.state_dir.is_dir()
         )
 
     @app.context_processor
@@ -177,15 +183,21 @@ def create_app(
 
     def page_context(**values: Any) -> dict[str, Any]:
         storage_available = player_storage_available()
-        collections = (
-            [
-                library_store.reconciled(item)
-                for item in reversed(library_store.all())
-            ]
-            if storage_available
-            else []
-        )
-        jobs = download_manager.jobs() if storage_available else []
+        try:
+            collections = (
+                [
+                    library_store.reconciled(item)
+                    for item in reversed(library_store.all())
+                ]
+                if storage_available
+                else []
+            )
+            jobs = download_manager.jobs() if storage_available else []
+        except (ManifestError, OSError):
+            storage_unavailable.set()
+            storage_available = False
+            collections = []
+            jobs = []
         return {
             "collections": collections,
             "jobs": jobs,
@@ -327,9 +339,11 @@ def create_app(
 
     @app.post("/storage/safely-remove")
     def safely_remove_storage() -> tuple[str, int] | str:
+        storage_unavailable.set()
         try:
             result = safely_remove_player(config, download_manager)
         except StorageError as exc:
+            storage_unavailable.clear()
             return render_template(
                 "index.html",
                 **page_context(results=None, query="", error=str(exc)),
@@ -341,7 +355,12 @@ def create_app(
         if not player_storage_available():
             return jsonify({"jobs": [], "storage_available": False}), 503
         jobs = []
-        for item in download_manager.jobs():
+        try:
+            active_jobs = download_manager.jobs()
+        except (ManifestError, OSError):
+            storage_unavailable.set()
+            return jsonify({"jobs": [], "storage_available": False}), 503
+        for item in active_jobs:
             jobs.append(
                 {
                     "id": item["id"],
