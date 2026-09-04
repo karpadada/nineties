@@ -334,7 +334,7 @@ def create_app(
                 "index.html",
                 **page_context(results=None, query="", error=str(exc)),
             ), 409
-        return render_template("safely_removed.html", volume=result["volume"])
+        return render_template("safely_removed.html", volumes=result["volumes"])
 
     @app.get("/api/jobs")
     def api_jobs() -> Any:

@@ -7,7 +7,8 @@
   </head>
   <body>
     <h1>Music storage safely removed</h1>
-    <p>You can now disconnect the device that was mounted at <code>{{ volume }}</code>.</p>
+    <p>You can now disconnect the music player.</p>
+    <p>Safely removed: {% for volume in volumes %}<code>{{ volume }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
     <p><a href="{{ url_for('index') }}">Return to Nineties</a></p>
   </body>
 </html>

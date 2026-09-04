@@ -18,6 +18,7 @@
       <hr>
     {% elif player_volume %}
       <p><strong>Music storage connected.</strong> Downloads and library state are stored on <code>{{ player_volume }}</code>.</p>
+      <p>Safely removing the player also ejects its other removable volumes.</p>
       <form action="{{ url_for('safely_remove_storage') }}" method="post">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
         <button type="submit"{% if storage_busy %} disabled aria-disabled="true" title="Wait for all library operations to finish"{% endif %}>Safely remove</button>

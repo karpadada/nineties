@@ -76,6 +76,10 @@ The database then travels with the card. Use **Safely remove** in the web app,
 or ask an AI agent using the Nineties plugin to safely remove the music device,
 before disconnecting it. Safe removal refuses to eject the device while a
 download or collection-removal operation is active.
+Nineties recognizes the configured `Music` volume by exact name, then uses
+macOS device metadata to eject only removable external disks exposed by the
+same physical USB player. This includes the player's `ECHO NANO` volume without
+ejecting unrelated external disks.
 
 The launcher checks for compatible updates to `ytmusicapi`, `yt-dlp`, and
 `yt-dlp-ejs` whenever the web API starts and on the first Nineties skill call in

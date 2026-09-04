@@ -107,10 +107,12 @@ def test_agent_safely_removes_player(tmp_path: Path, monkeypatch) -> None:
         lambda config, downloads: {
             "safely_removed": True,
             "volume": str(config.player_volume),
+            "volumes": [str(config.player_volume)],
         },
     )
 
     assert api.safely_remove() == {
         "safely_removed": True,
         "volume": str(player),
+        "volumes": [str(player)],
     }

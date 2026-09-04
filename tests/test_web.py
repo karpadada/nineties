@@ -421,6 +421,7 @@ def test_connected_player_has_safely_remove_button(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert b">Safely remove</button>" in response.data
     assert b'action="/storage/safely-remove"' in response.data
+    assert b"also ejects its other removable volumes" in response.data
 
 
 def test_safely_remove_button_is_disabled_during_download(tmp_path: Path) -> None:
@@ -467,7 +468,11 @@ def test_safely_remove_route_ejects_player(tmp_path: Path, monkeypatch) -> None:
 
     def fake_safely_remove(config, downloads):
         calls.append((config, downloads))
-        return {"safely_removed": True, "volume": str(player)}
+        return {
+            "safely_removed": True,
+            "volume": str(player),
+            "volumes": [str(player)],
+        }
 
     monkeypatch.setattr("nineties_music.web.safely_remove_player", fake_safely_remove)
 

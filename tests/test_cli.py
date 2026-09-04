@@ -48,6 +48,7 @@ def test_agent_cli_safely_remove_outputs_json(tmp_path, monkeypatch, capsys) -> 
         lambda *_args: {
             "safely_removed": True,
             "volume": "/Volumes/Music",
+            "volumes": ["/Volumes/Music", "/Volumes/ECHO NANO"],
         },
     )
 
@@ -57,4 +58,5 @@ def test_agent_cli_safely_remove_outputs_json(tmp_path, monkeypatch, capsys) -> 
     assert json.loads(capsys.readouterr().out) == {
         "safely_removed": True,
         "volume": "/Volumes/Music",
+        "volumes": ["/Volumes/Music", "/Volumes/ECHO NANO"],
     }

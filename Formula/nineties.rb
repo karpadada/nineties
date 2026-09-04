@@ -1,7 +1,7 @@
 class Nineties < Formula
   desc "Local YouTube Music browser and MP3 collection manager"
   homepage "https://github.com/karpadada/nineties"
-  url "https://github.com/karpadada/nineties.git", tag: "v0.6.1"
+  url "https://github.com/karpadada/nineties.git", tag: "v0.6.2"
   license "MIT"
   head "https://github.com/karpadada/nineties.git", branch: "main"
 
