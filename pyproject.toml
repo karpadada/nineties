@@ -1,6 +1,6 @@
 [project]
 name = "nineties-music-browser"
-version = "0.5.2"
+version = "0.5.3"
 description = "A plain local YouTube Music browser and MP3 collection manager"
 license = "MIT"
 license-files = ["LICENSE"]

@@ -148,15 +148,15 @@ def test_remote_runner_upgrades_an_existing_app_before_web_start(
     assert brew_log.read_text(encoding="utf-8").splitlines() == [
         "tap",
         "list --formula --full-name",
-        "update",
         "--repository karpadada/nineties",
+        "update",
         "upgrade --fetch-HEAD karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
     ]
     assert app_log.read_text(encoding="utf-8").splitlines() == ["web"]
 
 
-def test_remote_runner_repairs_a_divergent_tap_before_upgrading(
+def test_remote_runner_repairs_an_interrupted_or_divergent_tap_before_upgrading(
     tmp_path: Path,
 ) -> None:
     fake_bin = tmp_path / "bin"
@@ -164,8 +164,9 @@ def test_remote_runner_repairs_a_divergent_tap_before_upgrading(
     prefix = tmp_path / "prefix"
     (prefix / "bin").mkdir(parents=True)
     tap_repository = tmp_path / "tap"
-    (tap_repository / ".git").mkdir(parents=True)
+    (tap_repository / ".git/rebase-merge").mkdir(parents=True)
     brew_log = tmp_path / "brew.log"
+    git_log = tmp_path / "git.log"
     app_log = tmp_path / "app.log"
 
     fake_brew = fake_bin / "brew"
@@ -187,10 +188,13 @@ def test_remote_runner_repairs_a_divergent_tap_before_upgrading(
     fake_git = fake_bin / "git"
     fake_git.write_text(
         "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_GIT_LOG\"\n"
         "if [ \"$3 $4\" = 'rev-parse HEAD' ]; then\n"
         "  printf '%s\\n' old-head\n"
         "elif [ \"$3 $4\" = 'rev-parse origin/HEAD' ]; then\n"
         "  printf '%s\\n' new-head\n"
+        "elif [ \"$3 $4\" = 'rev-parse --absolute-git-dir' ]; then\n"
+        "  printf '%s\\n' \"$FAKE_TAP_REPOSITORY/.git\"\n"
         "fi\n",
         encoding="utf-8",
     )
@@ -211,6 +215,7 @@ def test_remote_runner_repairs_a_divergent_tap_before_upgrading(
             "FAKE_BREW_PREFIX": str(prefix),
             "FAKE_TAP_REPOSITORY": str(tap_repository),
             "FAKE_APP_LOG": str(app_log),
+            "FAKE_GIT_LOG": str(git_log),
         }
     )
 
@@ -219,13 +224,16 @@ def test_remote_runner_repairs_a_divergent_tap_before_upgrading(
     assert brew_log.read_text(encoding="utf-8").splitlines() == [
         "tap",
         "list --formula --full-name",
-        "update",
         "--repository karpadada/nineties",
         f"update-reset {tap_repository}",
+        "update",
         "upgrade --fetch-HEAD karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
     ]
     assert app_log.read_text(encoding="utf-8").splitlines() == ["web"]
+    assert f"-C {tap_repository} rebase --quit" in git_log.read_text(
+        encoding="utf-8"
+    ).splitlines()
 
 
 def test_remote_runner_does_not_let_homebrew_consume_piped_script(

@@ -17,14 +17,24 @@ repair_tap_if_diverged() {
 
   tap_head="$(git -C "$tap_repository" rev-parse HEAD </dev/null 2>/dev/null || true)"
   tap_origin_head="$(git -C "$tap_repository" rev-parse origin/HEAD </dev/null 2>/dev/null || true)"
-  if [ -z "$tap_head" ] || [ -z "$tap_origin_head" ]; then
+  tap_git_dir="$(git -C "$tap_repository" rev-parse --absolute-git-dir </dev/null 2>/dev/null || true)"
+  if [ -z "$tap_head" ] || [ -z "$tap_origin_head" ] || [ -z "$tap_git_dir" ]; then
     return
   fi
 
-  if [ "$tap_head" != "$tap_origin_head" ] \
+  rebase_in_progress=false
+  if [ -d "$tap_git_dir/rebase-merge" ] || [ -d "$tap_git_dir/rebase-apply" ]; then
+    rebase_in_progress=true
+  fi
+
+  if [ "$rebase_in_progress" = true ] \
+    || [ "$tap_head" != "$tap_origin_head" ] \
     || ! git -C "$tap_repository" diff --quiet -- </dev/null \
     || ! git -C "$tap_repository" diff --cached --quiet -- </dev/null; then
-    echo "Repairing the divergent Nineties Homebrew tap..." >&2
+    echo "Repairing the interrupted or divergent Nineties Homebrew tap..." >&2
+    if [ "$rebase_in_progress" = true ]; then
+      git -C "$tap_repository" rebase --quit </dev/null 2>/dev/null || true
+    fi
     brew update-reset "$tap_repository" </dev/null
   fi
 }
@@ -57,8 +67,8 @@ fi
 if [ "$installed" = false ]; then
   brew install --HEAD "$formula" </dev/null
 elif [ "$runs_web" = true ]; then
-  brew update </dev/null
   repair_tap_if_diverged
+  brew update </dev/null
   brew upgrade --fetch-HEAD "$formula" </dev/null
 fi
 
