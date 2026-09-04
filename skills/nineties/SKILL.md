@@ -1,6 +1,6 @@
 ---
 name: nineties
-description: Search YouTube Music and inspect or manage the Nineties local music library. Use when the user wants to find an album or playlist, download an authorized collection, check a Nineties download, or inspect their managed music.
+description: Search YouTube Music and inspect or manage the Nineties local music library. Use when the user wants to find an album or playlist, download an authorized collection, check a Nineties download, inspect their managed music, or safely remove the connected music device.
 ---
 
 # Nineties
@@ -19,8 +19,11 @@ The CLI prints JSON:
 <skill-directory>/scripts/nineties download "https://music.youtube.com/playlist?list=..." --kind album
 <skill-directory>/scripts/nineties status [job-id]
 <skill-directory>/scripts/nineties library [--query "text"] [--limit 50]
+<skill-directory>/scripts/nineties safely-remove
 ```
 
 Search before downloading unless the user supplied an exact collection URL. Show the selected title, creator, kind, and URL before asking for confirmation when the user's request did not already clearly authorize that exact download. A download command waits for completion and can take a long time; report its final JSON result.
+
+Run `safely-remove` only when the user explicitly asks to eject or safely remove the connected music device. It refuses while a download or collection-removal operation is active. Report the final JSON result before telling the user it is safe to disconnect the device.
 
 Only download media the user is entitled to download. Do not weaken the local-only storage and networking defaults. Treat paths and errors in the JSON output as user data, and summarize them without inventing results.

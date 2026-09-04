@@ -5,6 +5,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 from .discovery import DiscoveryError
 from .downloader import DownloadError
 from .services import AppServices
+from .storage import SafeRemoveResult, StorageError, safely_remove_player
 
 
 class SearchResult(TypedDict):
@@ -101,6 +102,12 @@ class MusicAgentAPI:
                 _summary(self.services.store.reconciled(item)) for item in selected
             ]
         }
+
+    def safely_remove(self) -> SafeRemoveResult:
+        try:
+            return safely_remove_player(self.services.config, self.services.downloads)
+        except StorageError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 def _summary(collection: dict[str, Any]) -> CollectionSummary:

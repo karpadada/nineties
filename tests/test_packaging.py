@@ -418,10 +418,12 @@ def test_skill_calls_shared_nineties_executable(tmp_path: Path) -> None:
         [wrapper, "search", "Fictional Album"], check=True, env=environment
     )
     subprocess.run([wrapper, "library"], check=True, env=environment)
+    subprocess.run([wrapper, "safely-remove"], check=True, env=environment)
 
     assert executable_log.read_text(encoding="utf-8").splitlines() == [
         "agent search Fictional Album",
         "agent library",
+        "agent safely-remove",
     ]
 
 

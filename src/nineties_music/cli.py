@@ -34,6 +34,11 @@ def _parser() -> argparse.ArgumentParser:
     library.add_argument("--query")
     library.add_argument("--limit", type=int, default=50)
 
+    commands.add_parser(
+        "safely-remove",
+        help="eject the connected Music device after downloads finish",
+    )
+
     return parser
 
 
@@ -60,8 +65,10 @@ def run_agent_cli(config: AppConfig, argv: Sequence[str]) -> int:
             result = {"collection": _summary(completed)}
         elif arguments.command == "status":
             result = api.status(arguments.job_id)
-        else:
+        elif arguments.command == "library":
             result = api.library(arguments.query, arguments.limit)
+        else:
+            result = api.safely_remove()
     except (DownloadError, ValueError) as exc:
         _write({"error": str(exc)}, error=True)
         return 2

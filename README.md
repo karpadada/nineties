@@ -30,8 +30,8 @@ It can:
 - search YouTube Music for albums and playlists, with cover art;
 - download MP3 collections with progress, retry, and removal controls;
 - keep a transactional library database alongside a supported removable music card; and
-- expose the same search, download, status, and library operations to AI agents
-  through on-demand plugins.
+- expose search, download, status, library, and safe-device-removal operations
+  to AI agents through on-demand plugins.
 
 > Only download media you are entitled to download. YouTube and YouTube Music
 > may change independently of this project, and their terms still apply.
@@ -72,10 +72,10 @@ MUSIC_STATE_DIR="/Volumes/Music/.nineties-music" \
 nineties
 ```
 
-The database then travels with the card. Eject the card only after downloads
-finish and every Nineties app or agent command has stopped. SQLite may keep
-temporary `library.sqlite3-wal` and `library.sqlite3-shm` files beside the
-database while it is in use.
+The database then travels with the card. Use **Safely remove** in the web app,
+or ask an AI agent using the Nineties plugin to safely remove the music device,
+before disconnecting it. Safe removal refuses to eject the device while a
+download or collection-removal operation is active.
 
 The launcher checks for compatible updates to `ytmusicapi`, `yt-dlp`, and
 `yt-dlp-ejs` whenever the web API starts and on the first Nineties skill call in
@@ -124,7 +124,8 @@ nineties plugins install pi
 ```
 
 Start a new agent session after installation. Ask it something like: “Use
-Nineties to search for *Fictional Album* by *Fictional Artist*.” When invoking
+Nineties to search for *Fictional Album* by *Fictional Artist*,” or “Use
+Nineties to safely remove my music device.” When invoking
 the skill explicitly, use `$nineties` in Codex, `/nineties:nineties` in Claude
 Code, or `/skill:nineties` in Pi.
 

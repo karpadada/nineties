@@ -43,11 +43,14 @@ class FakeDownloader:
         }
 
 
-def make_api(tmp_path: Path) -> tuple[MusicAgentAPI, LibraryStore, DownloadManager]:
+def make_api(
+    tmp_path: Path, *, player_volume: Path | None = None
+) -> tuple[MusicAgentAPI, LibraryStore, DownloadManager]:
     config = AppConfig(
         project_root=tmp_path,
         library_dir=tmp_path / "music",
         state_dir=tmp_path / "state",
+        player_volume=player_volume,
     )
     store = LibraryStore(config.state_dir, config.library_dir)
     manager = DownloadManager(store, FakeDownloader(), start_worker=False)  # type: ignore[arg-type]
@@ -93,3 +96,21 @@ def test_agent_rejects_unknown_job(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="job ID"):
         api.status("missing")
+
+
+def test_agent_safely_removes_player(tmp_path: Path, monkeypatch) -> None:
+    player = tmp_path / "Music"
+    player.mkdir()
+    api, _, _ = make_api(tmp_path, player_volume=player)
+    monkeypatch.setattr(
+        "nineties_music.agent.safely_remove_player",
+        lambda config, downloads: {
+            "safely_removed": True,
+            "volume": str(config.player_volume),
+        },
+    )
+
+    assert api.safely_remove() == {
+        "safely_removed": True,
+        "volume": str(player),
+    }

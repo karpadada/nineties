@@ -29,6 +29,7 @@ from .downloader import (
 )
 from .services import create_services
 from .store import LibraryStore, ManifestError
+from .storage import StorageError, safely_remove_player
 
 
 _ARTWORK_HOSTS = {
@@ -184,9 +185,12 @@ def create_app(
             if storage_available
             else []
         )
+        jobs = download_manager.jobs() if storage_available else []
         return {
             "collections": collections,
-            "jobs": download_manager.jobs() if storage_available else [],
+            "jobs": jobs,
+            "storage_busy": bool(jobs)
+            or any(item.get("status") == "deleting" for item in collections),
             "library_dir": str(config.library_dir),
             "player_volume": str(config.player_volume) if config.player_volume else None,
             "storage_available": storage_available,
@@ -320,6 +324,17 @@ def create_app(
                 "remove.html", collection=collection, error=str(exc)
             ), 409
         return redirect(url_for("index"))
+
+    @app.post("/storage/safely-remove")
+    def safely_remove_storage() -> tuple[str, int] | str:
+        try:
+            result = safely_remove_player(config, download_manager)
+        except StorageError as exc:
+            return render_template(
+                "index.html",
+                **page_context(results=None, query="", error=str(exc)),
+            ), 409
+        return render_template("safely_removed.html", volume=result["volume"])
 
     @app.get("/api/jobs")
     def api_jobs() -> Any:

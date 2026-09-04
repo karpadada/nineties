@@ -18,6 +18,13 @@
       <hr>
     {% elif player_volume %}
       <p><strong>Music storage connected.</strong> Downloads and library state are stored on <code>{{ player_volume }}</code>.</p>
+      <form action="{{ url_for('safely_remove_storage') }}" method="post">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button type="submit"{% if storage_busy %} disabled aria-disabled="true" title="Wait for all library operations to finish"{% endif %}>Safely remove</button>
+      </form>
+      {% if storage_busy %}
+        <p><small>Safely remove becomes available when all library operations finish.</small></p>
+      {% endif %}
     {% else %}
       <p><strong>Local storage mode.</strong> Downloads use <code>{{ library_dir }}</code>.</p>
     {% endif %}
@@ -81,7 +88,7 @@
     </form>
 
     <h2>Use with an AI agent</h2>
-    <p>Install the Nineties plugin to let an agent search, download authorized collections, check progress, and inspect this managed library only when needed. Every plugin uses this same installed Nineties application.</p>
+    <p>Install the Nineties plugin to let an agent search, download authorized collections, check progress, inspect this managed library, and safely remove the connected music device only when needed. Every plugin uses this same installed Nineties application.</p>
 
     <details>
       <summary>Codex</summary>

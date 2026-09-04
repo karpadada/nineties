@@ -403,6 +403,83 @@ def test_required_player_allows_downloads_when_mounted(tmp_path: Path) -> None:
     assert len(store.all()) == 1
 
 
+def test_connected_player_has_safely_remove_button(tmp_path: Path) -> None:
+    player = tmp_path / "Music"
+    player.mkdir()
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=player / "Music",
+        state_dir=player / ".nineties-music",
+        player_volume=player,
+        require_player_volume=True,
+    )
+    app = create_app(config, discovery=FakeDiscovery(), start_worker=False)  # type: ignore[arg-type]
+    app.testing = True
+
+    response = app.test_client().get("/")
+
+    assert response.status_code == 200
+    assert b">Safely remove</button>" in response.data
+    assert b'action="/storage/safely-remove"' in response.data
+
+
+def test_safely_remove_button_is_disabled_during_download(tmp_path: Path) -> None:
+    player = tmp_path / "Music"
+    player.mkdir()
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=player / "Music",
+        state_dir=player / ".nineties-music",
+        player_volume=player,
+        require_player_volume=True,
+    )
+    store = LibraryStore(config.state_dir, config.library_dir)
+    manager = DownloadManager(store, FakeDownloader(), start_worker=False)  # type: ignore[arg-type]
+    manager.enqueue("https://music.youtube.com/browse/album-id", "album")
+    app = create_app(
+        config,
+        discovery=FakeDiscovery(),  # type: ignore[arg-type]
+        manager=manager,
+        store=store,
+        start_worker=False,
+    )
+    app.testing = True
+
+    response = app.test_client().get("/")
+
+    assert b'disabled aria-disabled="true"' in response.data
+    assert b"all library operations finish" in response.data
+
+
+def test_safely_remove_route_ejects_player(tmp_path: Path, monkeypatch) -> None:
+    player = tmp_path / "Music"
+    player.mkdir()
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=player / "Music",
+        state_dir=player / ".nineties-music",
+        player_volume=player,
+        require_player_volume=True,
+    )
+    app = create_app(config, discovery=FakeDiscovery(), start_worker=False)  # type: ignore[arg-type]
+    app.testing = True
+    calls = []
+
+    def fake_safely_remove(config, downloads):
+        calls.append((config, downloads))
+        return {"safely_removed": True, "volume": str(player)}
+
+    monkeypatch.setattr("nineties_music.web.safely_remove_player", fake_safely_remove)
+
+    response = app.test_client().post(
+        "/storage/safely-remove", data=csrf_form(app)
+    )
+
+    assert response.status_code == 200
+    assert b"Music storage safely removed" in response.data
+    assert len(calls) == 1
+
+
 def test_request_body_limit_and_security_headers(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path)
     client = app.test_client()

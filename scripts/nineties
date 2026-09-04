@@ -27,7 +27,7 @@ usage() {
   cat <<'EOF'
 Usage:
   nineties [web]
-  nineties agent <search|download|status|library> ...
+  nineties agent <search|download|status|library|safely-remove> ...
   nineties update
   nineties plugins install [codex|claude|pi|all]
   nineties plugins update [codex|claude|pi|all]
