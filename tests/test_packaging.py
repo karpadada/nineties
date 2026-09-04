@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import tomllib
 from pathlib import Path
 
@@ -224,6 +225,74 @@ def test_remote_runner_repairs_a_divergent_tap_before_upgrading(
         "upgrade --fetch-HEAD karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
     ]
+    assert app_log.read_text(encoding="utf-8").splitlines() == ["web"]
+
+
+def test_remote_runner_does_not_let_homebrew_consume_piped_script(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    upgrade_started = tmp_path / "upgrade-started"
+    app_log = tmp_path / "app.log"
+
+    fake_brew = fake_bin / "brew"
+    fake_brew.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$*\" = 'tap' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties'\n"
+        "elif [ \"$*\" = 'list --formula --full-name' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties/nineties'\n"
+        "elif [ \"$1\" = 'upgrade' ]; then\n"
+        "  touch \"$FAKE_UPGRADE_STARTED\"\n"
+        "  cat >/dev/null\n"
+        "elif [ \"$1\" = '--prefix' ]; then\n"
+        "  printf '%s\\n' \"$FAKE_BREW_PREFIX\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_brew.chmod(0o755)
+    fake_app = prefix / "bin/nineties"
+    fake_app.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"${*:-web}\" >> \"$FAKE_APP_LOG\"\n",
+        encoding="utf-8",
+    )
+    fake_app.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "FAKE_BREW_PREFIX": str(prefix),
+            "FAKE_UPGRADE_STARTED": str(upgrade_started),
+            "FAKE_APP_LOG": str(app_log),
+        }
+    )
+    runner = (ROOT / "run.sh").read_text(encoding="utf-8")
+    before_exec, after_exec = runner.split("\nexecutable=", maxsplit=1)
+    process = subprocess.Popen(
+        ["sh"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=environment,
+    )
+    assert process.stdin is not None
+    process.stdin.write(f"{before_exec}\n")
+    process.stdin.flush()
+    for _ in range(500):
+        if upgrade_started.exists():
+            break
+        time.sleep(0.01)
+    assert upgrade_started.exists()
+    process.stdin.write(f"executable={after_exec}")
+    process.stdin.close()
+
+    assert process.wait(timeout=5) == 0
     assert app_log.read_text(encoding="utf-8").splitlines() == ["web"]
 
 
