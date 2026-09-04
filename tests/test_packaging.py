@@ -92,7 +92,7 @@ def test_remote_runner_refreshes_tap_and_installs_head(tmp_path: Path) -> None:
 
     assert brew_log.read_text(encoding="utf-8").splitlines() == [
         "tap",
-        "list --versions karpadada/nineties/nineties",
+        "list --formula --full-name",
         "update",
         "install --HEAD karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
@@ -116,6 +116,8 @@ def test_remote_runner_upgrades_an_existing_app_before_web_start(
         "printf '%s\\n' \"$*\" >> \"$FAKE_BREW_LOG\"\n"
         "if [ \"$*\" = 'tap' ]; then\n"
         "  printf '%s\\n' 'karpadada/nineties'\n"
+        "elif [ \"$*\" = 'list --formula --full-name' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties/nineties'\n"
         "elif [ \"$1\" = '--prefix' ]; then\n"
         "  printf '%s\\n' \"$FAKE_BREW_PREFIX\"\n"
         "fi\n",
@@ -144,8 +146,81 @@ def test_remote_runner_upgrades_an_existing_app_before_web_start(
 
     assert brew_log.read_text(encoding="utf-8").splitlines() == [
         "tap",
-        "list --versions karpadada/nineties/nineties",
+        "list --formula --full-name",
         "update",
+        "--repository karpadada/nineties",
+        "upgrade --fetch-HEAD karpadada/nineties/nineties",
+        "--prefix karpadada/nineties/nineties",
+    ]
+    assert app_log.read_text(encoding="utf-8").splitlines() == ["web"]
+
+
+def test_remote_runner_repairs_a_divergent_tap_before_upgrading(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    tap_repository = tmp_path / "tap"
+    (tap_repository / ".git").mkdir(parents=True)
+    brew_log = tmp_path / "brew.log"
+    app_log = tmp_path / "app.log"
+
+    fake_brew = fake_bin / "brew"
+    fake_brew.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_BREW_LOG\"\n"
+        "if [ \"$*\" = 'tap' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties'\n"
+        "elif [ \"$*\" = 'list --formula --full-name' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties/nineties'\n"
+        "elif [ \"$1\" = '--repository' ]; then\n"
+        "  printf '%s\\n' \"$FAKE_TAP_REPOSITORY\"\n"
+        "elif [ \"$1\" = '--prefix' ]; then\n"
+        "  printf '%s\\n' \"$FAKE_BREW_PREFIX\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_brew.chmod(0o755)
+    fake_git = fake_bin / "git"
+    fake_git.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$3 $4\" = 'rev-parse HEAD' ]; then\n"
+        "  printf '%s\\n' old-head\n"
+        "elif [ \"$3 $4\" = 'rev-parse origin/HEAD' ]; then\n"
+        "  printf '%s\\n' new-head\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    fake_app = prefix / "bin/nineties"
+    fake_app.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"${*:-web}\" >> \"$FAKE_APP_LOG\"\n",
+        encoding="utf-8",
+    )
+    fake_app.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "FAKE_BREW_LOG": str(brew_log),
+            "FAKE_BREW_PREFIX": str(prefix),
+            "FAKE_TAP_REPOSITORY": str(tap_repository),
+            "FAKE_APP_LOG": str(app_log),
+        }
+    )
+
+    subprocess.run([ROOT / "run.sh"], check=True, env=environment)
+
+    assert brew_log.read_text(encoding="utf-8").splitlines() == [
+        "tap",
+        "list --formula --full-name",
+        "update",
+        "--repository karpadada/nineties",
+        f"update-reset {tap_repository}",
         "upgrade --fetch-HEAD karpadada/nineties/nineties",
         "--prefix karpadada/nineties/nineties",
     ]
@@ -175,6 +250,8 @@ def test_remote_runner_repairs_legacy_install_without_executable(
         "printf '%s\\n' \"$*\" >> \"$FAKE_BREW_LOG\"\n"
         "if [ \"$*\" = 'tap' ]; then\n"
         "  printf '%s\\n' 'karpadada/nineties'\n"
+        "elif [ \"$*\" = 'list --formula --full-name' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties/nineties'\n"
         "elif [ \"$1\" = '--prefix' ]; then\n"
         "  printf '%s\\n' \"$FAKE_BREW_PREFIX\"\n"
         "elif [ \"$1\" = 'reinstall' ]; then\n"
@@ -202,7 +279,7 @@ def test_remote_runner_repairs_legacy_install_without_executable(
 
     assert brew_log.read_text(encoding="utf-8").splitlines() == [
         "tap",
-        "list --versions karpadada/nineties/nineties",
+        "list --formula --full-name",
         "--prefix karpadada/nineties/nineties",
         "update",
         "reinstall karpadada/nineties/nineties",
