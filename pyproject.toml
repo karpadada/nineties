@@ -1,0 +1,22 @@
+[project]
+name = "nineties-music-browser"
+version = "0.4.1"
+description = "A plain local YouTube Music browser and MP3 collection manager"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "flask>=3.1,<4",
+  "yt-dlp>=2026.8.19",
+  "yt-dlp-ejs",
+  "ytmusicapi>=1,<2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

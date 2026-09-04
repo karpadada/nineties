@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% if collection.status in ['queued', 'downloading'] %}
+      <meta http-equiv="refresh" content="2">
+    {% endif %}
+    <title>{{ collection.title }} - 90s Music Browser</title>
+  </head>
+  <body>
+    <p><a href="{{ url_for('index') }}">Home</a></p>
+    <h1>{{ collection.title }}</h1>
+    <dl>
+      <dt>Type</dt><dd>{{ collection.kind }}</dd>
+      <dt>Artist or curator</dt><dd>{{ collection.artist }}</dd>
+      <dt>Status</dt><dd>{{ collection.status }}</dd>
+      <dt>Disk status</dt><dd>{{ collection.integrity }}</dd>
+      <dt>Managed folder</dt><dd><code>{{ collection.directory }}</code></dd>
+      <dt>Source</dt><dd><a href="{{ collection.source_url }}">YouTube Music</a></dd>
+    </dl>
+
+    {% if collection.error %}
+      <p><strong>Error:</strong> {{ collection.error }}</p>
+    {% endif %}
+
+    {% if retry_error %}
+      <p><strong>Retry error:</strong> {{ retry_error }}</p>
+    {% endif %}
+
+    {% if collection.status in ['failed', 'interrupted', 'partial'] %}
+      <form action="{{ url_for('retry_download', collection_id=collection.id) }}" method="post">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Retry download</button>
+      </form>
+    {% endif %}
+
+    {% if collection.status in ['queued', 'downloading'] %}
+      <h2>Progress</h2>
+      <p>{{ collection.progress.track_index }} / {{ collection.progress.track_total }}:
+         {{ collection.progress.current_title }} ({{ collection.progress.percent }})</p>
+      <p>This page refreshes every two seconds while the download is active.</p>
+    {% endif %}
+
+    <h2>Managed MP3 files</h2>
+    {% if collection.files %}
+      <ol>
+        {% for file in collection.files %}
+          <li><code>{{ file }}</code>{% if file in collection.missing_files %} — missing{% endif %}</li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <p>No completed MP3 files are recorded.</p>
+    {% endif %}
+
+    <p><a href="{{ url_for('confirm_remove', collection_id=collection.id) }}">Remove this collection</a></p>
+  </body>
+</html>

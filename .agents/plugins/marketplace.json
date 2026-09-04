@@ -1,0 +1,21 @@
+{
+  "name": "nineties",
+  "interface": {
+    "displayName": "Nineties"
+  },
+  "plugins": [
+    {
+      "name": "nineties",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/karpadada/nineties.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

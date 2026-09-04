@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>90s Music Browser</title>
+  </head>
+  <body>
+    <h1>90s Music Browser</h1>
+    <p>Find an album or playlist and copy it to your MP3 music directory.</p>
+
+    {% if player_volume %}
+      <p><strong>Music storage connected.</strong> Downloads and library state are stored on <code>{{ player_volume }}</code>.</p>
+    {% else %}
+      <p><strong>Music storage not detected.</strong> Downloads use the local fallback until the player is connected and the app is restarted.</p>
+    {% endif %}
+
+    {% if error %}
+      <p><strong>Error:</strong> {{ error }}</p>
+    {% endif %}
+
+    <h2>Search YouTube Music</h2>
+    <form action="{{ url_for('search') }}" method="get">
+      <label for="query">Album or playlist:</label>
+      <input id="query" name="q" value="{{ query }}" required>
+      <button type="submit">Search</button>
+    </form>
+
+    {% if results is not none %}
+      <h3>Search results</h3>
+      {% if results %}
+        <table>
+          <thead>
+            <tr><th>Art</th><th>Type</th><th>Title</th><th>By</th><th>Details</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            {% for result in results %}
+              <tr>
+                <td>
+                  {% if result.thumbnail_url %}
+                    <img src="{{ url_for('artwork', url=result.thumbnail_url) }}" alt="Cover art for {{ result.title }}" width="80" height="80" loading="lazy" decoding="async">
+                  {% endif %}
+                </td>
+                <td>{{ result.kind }}</td>
+                <td>{{ result.title }}</td>
+                <td>{{ result.creator }}</td>
+                <td>{{ result.details }}</td>
+                <td>
+                  <form action="{{ url_for('create_download') }}" method="post">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="url" value="{{ result.url }}">
+                    <input type="hidden" name="kind" value="{{ result.kind }}">
+                    <input type="hidden" name="title" value="{{ result.title }}">
+                    <input type="hidden" name="artist" value="{{ result.creator }}">
+                    <button type="submit">Download</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>No albums or playlists found.</p>
+      {% endif %}
+    {% endif %}
+
+    <h2>Import a YouTube URL</h2>
+    <form action="{{ url_for('create_download') }}" method="post">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+      <label for="url">Album or playlist URL:</label>
+      <input id="url" name="url" type="url" size="60" required
+             placeholder="https://music.youtube.com/playlist?list=...">
+      <button type="submit">Inspect and download</button>
+    </form>
+
+    <h2>Use with an AI agent</h2>
+    <p>Install the Nineties plugin to let an agent search, download authorized collections, check progress, and inspect this managed library only when needed. Every plugin uses this same installed Nineties application.</p>
+
+    <details>
+      <summary>Codex</summary>
+      <p>Run:</p>
+      <pre><code>nineties plugins install codex</code></pre>
+    </details>
+
+    <details>
+      <summary>Claude Code</summary>
+      <p>Run:</p>
+      <pre><code>nineties plugins install claude</code></pre>
+    </details>
+
+    <details>
+      <summary>Pi</summary>
+      <p>Run:</p>
+      <pre><code>nineties plugins install pi</code></pre>
+    </details>
+
+    <p>Start a new session, then ask: <q>Use Nineties to search for Fictional Album by Fictional Artist.</q></p>
+    <p><small>Explicit commands: <code>$nineties</code> in Codex, <code>/nineties:nineties</code> in Claude Code, or <code>/skill:nineties</code> in Pi. Only download media you are entitled to download.</small></p>
+
+    <h2>Download queue</h2>
+    <div id="jobs" data-jobs-url="{{ url_for('api_jobs') }}">
+      {% if jobs %}
+        <ul>
+          {% for job in jobs %}
+            <li><a href="{{ url_for('collection_detail', collection_id=job.id) }}">{{ job.title }}</a>: {{ job.status }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No downloads are running.</p>
+      {% endif %}
+    </div>
+
+    <h2>Managed library</h2>
+    <p>Music directory: <code>{{ library_dir }}</code></p>
+    {% if collections %}
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Collection</th><th>Status</th><th>Files</th><th>Disk</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for collection in collections %}
+            <tr>
+              <td>{{ collection.kind }}</td>
+              <td><a href="{{ url_for('collection_detail', collection_id=collection.id) }}">{{ collection.title }}</a></td>
+              <td>{{ collection.status }}</td>
+              <td>{{ collection.files|length }} / {{ collection.track_total }}</td>
+              <td>{{ collection.integrity }}</td>
+              <td><a href="{{ url_for('confirm_remove', collection_id=collection.id) }}">Remove</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>The managed library is empty.</p>
+    {% endif %}
+
+    <script src="{{ url_for('static', filename='jobs.js') }}"></script>
+  </body>
+</html>

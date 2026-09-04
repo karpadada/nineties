@@ -1,0 +1,17 @@
+{
+  "name": "nineties",
+  "owner": {
+    "name": "Nineties contributors"
+  },
+  "plugins": [
+    {
+      "name": "nineties",
+      "source": {
+        "source": "github",
+        "repo": "karpadada/nineties"
+      },
+      "description": "Search YouTube Music and manage authorized album and playlist downloads.",
+      "category": "Productivity"
+    }
+  ]
+}

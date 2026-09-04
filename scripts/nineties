@@ -1,0 +1,421 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository="karpadada/nineties"
+repository_url="https://github.com/$repository"
+marketplace="nineties"
+brew_formula="${NINETIES_BREW_FORMULA:-karpadada/nineties/nineties}"
+active_marker=""
+runtime_project=""
+runtime_environment=""
+runtime_root=""
+app_data=""
+uv_bin=""
+python_bin=""
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${NINETIES_PACKAGE_ROOT:-}" ]]; then
+  package_root="$NINETIES_PACKAGE_ROOT"
+elif [[ -f "$script_dir/pyproject.toml" ]]; then
+  package_root="$script_dir"
+else
+  package_root="$(cd -- "$script_dir/.." && pwd)"
+fi
+
+usage() {
+  cat <<'EOF'
+Usage:
+  nineties [web]
+  nineties agent <search|download|status|library> ...
+  nineties update
+  nineties plugins install [codex|claude|pi|all]
+  nineties plugins update [codex|claude|pi|all]
+  nineties --version
+
+Running nineties without a command starts the local web interface.
+EOF
+}
+
+project_version() {
+  sed -nE 's/^version = "([^"]+)"/\1/p' "$package_root/pyproject.toml" | head -n 1
+}
+
+require_command() {
+  local command_name="$1"
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "The '$command_name' command is required for this operation." >&2
+    return 1
+  fi
+}
+
+codex_marketplace_configured() {
+  command -v codex >/dev/null 2>&1 \
+    && codex plugin marketplace list --json 2>/dev/null \
+      | grep -Eq '"name"[[:space:]]*:[[:space:]]*"nineties"'
+}
+
+codex_plugin_installed() {
+  if ! command -v codex >/dev/null 2>&1; then
+    return 1
+  fi
+  if codex plugin list --json 2>/dev/null \
+    | grep -Eq '"pluginId"[[:space:]]*:[[:space:]]*"nineties@nineties"'; then
+    return 0
+  fi
+  [[ -d "${CODEX_HOME:-${HOME}/.codex}/plugins/cache/nineties/nineties" ]]
+}
+
+claude_marketplace_configured() {
+  command -v claude >/dev/null 2>&1 \
+    && claude plugin marketplace list --json 2>/dev/null \
+      | grep -Eq '"name"[[:space:]]*:[[:space:]]*"nineties"'
+}
+
+claude_plugin_installed() {
+  command -v claude >/dev/null 2>&1 \
+    && claude plugin list --json 2>/dev/null \
+      | grep -Eq 'nineties(@nineties)?'
+}
+
+pi_plugin_installed() {
+  command -v pi >/dev/null 2>&1 \
+    && pi list 2>/dev/null | grep -Fq "$repository_url"
+}
+
+install_codex_plugin() {
+  require_command codex
+  if codex_marketplace_configured; then
+    codex plugin marketplace upgrade "$marketplace"
+  else
+    codex plugin marketplace add "$repository"
+  fi
+  codex plugin add "nineties@$marketplace"
+}
+
+install_claude_plugin() {
+  require_command claude
+  if claude_marketplace_configured; then
+    claude plugin marketplace update "$marketplace"
+  else
+    claude plugin marketplace add "$repository"
+  fi
+  if claude_plugin_installed; then
+    claude plugin update "nineties@$marketplace"
+  else
+    claude plugin install "nineties@$marketplace" --scope user
+  fi
+}
+
+install_pi_plugin() {
+  require_command pi
+  if pi_plugin_installed; then
+    pi update --extension "$repository_url"
+  else
+    pi install "$repository_url"
+  fi
+}
+
+update_codex_plugin() {
+  codex plugin marketplace upgrade "$marketplace"
+  codex plugin add "nineties@$marketplace"
+}
+
+update_claude_plugin() {
+  claude plugin marketplace update "$marketplace"
+  claude plugin update "nineties@$marketplace"
+}
+
+update_pi_plugin() {
+  pi update --extension "$repository_url"
+}
+
+install_plugins() {
+  local target="${1:-all}"
+  local installed_count=0
+  case "$target" in
+    codex)
+      install_codex_plugin
+      ;;
+    claude)
+      install_claude_plugin
+      ;;
+    pi)
+      install_pi_plugin
+      ;;
+    all)
+      if command -v codex >/dev/null 2>&1; then
+        install_codex_plugin
+        installed_count=$((installed_count + 1))
+      fi
+      if command -v claude >/dev/null 2>&1; then
+        install_claude_plugin
+        installed_count=$((installed_count + 1))
+      fi
+      if command -v pi >/dev/null 2>&1; then
+        install_pi_plugin
+        installed_count=$((installed_count + 1))
+      fi
+      if ((installed_count == 0)); then
+        echo "No supported agent command was found (codex, claude, or pi)." >&2
+        return 1
+      fi
+      ;;
+    *)
+      echo "Unknown plugin target: $target" >&2
+      usage >&2
+      return 2
+      ;;
+  esac
+  echo "Plugin installation complete. Start a new agent session before using it." >&2
+}
+
+update_plugins() {
+  local target="${1:-all}"
+  local updated_count=0
+  case "$target" in
+    codex)
+      if ! codex_plugin_installed; then
+        echo "The Codex plugin is not installed. Run: nineties plugins install codex" >&2
+        return 1
+      fi
+      update_codex_plugin
+      ;;
+    claude)
+      if ! claude_plugin_installed; then
+        echo "The Claude plugin is not installed. Run: nineties plugins install claude" >&2
+        return 1
+      fi
+      update_claude_plugin
+      ;;
+    pi)
+      if ! pi_plugin_installed; then
+        echo "The Pi plugin is not installed. Run: nineties plugins install pi" >&2
+        return 1
+      fi
+      update_pi_plugin
+      ;;
+    all)
+      if codex_plugin_installed; then
+        update_codex_plugin
+        updated_count=$((updated_count + 1))
+      fi
+      if claude_plugin_installed; then
+        update_claude_plugin
+        updated_count=$((updated_count + 1))
+      fi
+      if pi_plugin_installed; then
+        update_pi_plugin
+        updated_count=$((updated_count + 1))
+      fi
+      if ((updated_count == 0)); then
+        echo "No installed Nineties agent plugins were found." >&2
+        return 0
+      fi
+      echo "Plugin update complete. Start a new agent session to load it." >&2
+      ;;
+    *)
+      echo "Unknown plugin target: $target" >&2
+      usage >&2
+      return 2
+      ;;
+  esac
+  if [[ "$target" != all ]]; then
+    echo "Plugin update complete. Start a new agent session to load it." >&2
+  fi
+}
+
+update_application() {
+  require_command brew
+  if ! brew list --versions "$brew_formula" >/dev/null 2>&1; then
+    echo "Nineties is not installed through Homebrew as $brew_formula." >&2
+    return 1
+  fi
+
+  brew update
+  brew upgrade "$brew_formula"
+
+  local updated_executable
+  updated_executable="$(brew --prefix "$brew_formula")/bin/nineties"
+  if [[ ! -x "$updated_executable" ]]; then
+    echo "Homebrew upgraded Nineties, but its executable was not found." >&2
+    return 1
+  fi
+  exec "$updated_executable" __update-installed-plugins
+}
+
+configure_runtime() {
+  local version
+  version="$(project_version)"
+  if [[ -z "$version" ]]; then
+    echo "Could not read the Nineties application version." >&2
+    return 2
+  fi
+
+  local data_home
+  uv_bin="${NINETIES_UV:-$(command -v uv || true)}"
+  python_bin="${NINETIES_PYTHON:-$(command -v python3.12 || command -v python3 || true)}"
+  if [[ -z "$uv_bin" || -z "$python_bin" ]]; then
+    echo "Nineties requires Homebrew's uv and Python 3.12 dependencies." >&2
+    return 127
+  fi
+
+  data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+  app_data="${MUSIC_APP_DATA_DIR:-$data_home/nineties-music}"
+  runtime_root="$app_data/runtime"
+  runtime_project="$runtime_root/$version"
+  runtime_environment="$runtime_project/.venv"
+
+  mkdir -p "$runtime_project"
+  if [[ ! -f "$runtime_project/pyproject.toml" ]]; then
+    install -m 600 "$package_root/pyproject.toml" "$runtime_project/pyproject.toml"
+  fi
+  if [[ ! -f "$runtime_project/uv.lock" ]]; then
+    install -m 600 "$package_root/uv.lock" "$runtime_project/uv.lock"
+  fi
+
+  export UV_PYTHON_DOWNLOADS=never
+  export UV_PROJECT_ENVIRONMENT="$runtime_environment"
+}
+
+update_youtube_packages() {
+  local lock_backup update_succeeded=true
+  lock_backup="$(mktemp "$runtime_project/uv.lock.backup.XXXXXX")"
+  cp "$runtime_project/uv.lock" "$lock_backup"
+  if "$uv_bin" sync \
+    --project "$runtime_project" \
+    --no-dev \
+    --python "$python_bin" \
+    --upgrade-package ytmusicapi \
+    --upgrade-package yt-dlp \
+    --upgrade-package yt-dlp-ejs; then
+    rm -f "$lock_backup"
+  else
+    update_succeeded=false
+    echo "Could not update the YouTube compatibility packages; using the last working versions." >&2
+    mv -f "$lock_backup" "$runtime_project/uv.lock"
+    "$uv_bin" sync \
+      --project "$runtime_project" \
+      --locked \
+      --no-dev \
+      --python "$python_bin"
+  fi
+  touch "$runtime_project/.ready"
+  [[ "$update_succeeded" == true ]]
+}
+
+session_marker_for_agent() {
+  local session_id="${NINETIES_AGENT_SESSION_ID:-}"
+  if [[ -z "$session_id" ]]; then
+    return 1
+  fi
+  if [[ ! "$session_id" =~ ^[A-Za-z0-9._:-]{1,128}$ ]]; then
+    session_id="$(printf '%s' "$session_id" | shasum -a 256 | awk '{print $1}')"
+  fi
+  mkdir -p "$runtime_project/sessions"
+  printf '%s/%s\n' "$runtime_project/sessions" "$session_id"
+}
+
+run_application() {
+  local mode="$1"
+  shift
+
+  configure_runtime
+
+  local update_due=false
+  local session_marker=""
+  if [[ "$mode" == agent ]]; then
+    session_marker="$(session_marker_for_agent)" || true
+  fi
+  if [[ ! -f "$runtime_project/.ready" \
+    || ! -x "$runtime_environment/bin/python" \
+    || ! -x "$runtime_environment/bin/yt-dlp" ]]; then
+    update_due=true
+  elif [[ "$mode" == web ]]; then
+    update_due=true
+  elif [[ -n "$session_marker" ]]; then
+    if [[ ! -f "$session_marker" ]]; then
+      update_due=true
+    fi
+  else
+    # Unknown agent hosts do not expose a stable session identifier, so checking
+    # every invocation is safer than silently skipping a new session.
+    update_due=true
+  fi
+
+  if [[ "$update_due" == true ]]; then
+    if update_youtube_packages; then
+      if [[ -n "$session_marker" ]]; then
+        touch "$session_marker"
+      fi
+    fi
+  fi
+
+  touch "$runtime_project/.nineties-runtime" "$runtime_project/.last-used"
+  active_marker="$runtime_project/.active.$$"
+  cleanup_runtime() {
+    if [[ -n "$active_marker" ]]; then
+      rm -f -- "$active_marker"
+    fi
+  }
+  trap cleanup_runtime EXIT INT TERM HUP
+  touch "$active_marker"
+
+  local prune_script="$package_root/prune-runtime-versions"
+  if [[ ! -x "$prune_script" ]]; then
+    prune_script="$package_root/scripts/prune-runtime-versions"
+  fi
+  "$prune_script" "$runtime_root" 2
+
+  export MUSIC_LOCAL_DATA_DIR="${MUSIC_LOCAL_DATA_DIR:-$app_data}"
+  export MUSIC_YT_DLP="$runtime_environment/bin/yt-dlp"
+  export NINETIES_CONTROL_EXECUTABLE="${NINETIES_CONTROL_EXECUTABLE:-$script_dir/nineties}"
+  export PYTHONPATH="$package_root/src"
+  "$runtime_environment/bin/python" -m nineties_music "$mode" "$@"
+}
+
+case "${1:-web}" in
+  web)
+    shift || true
+    run_application web "$@"
+    ;;
+  agent)
+    shift
+    run_application agent "$@"
+    ;;
+  update)
+    shift
+    if (($#)); then
+      echo "nineties update does not accept arguments." >&2
+      exit 2
+    fi
+    update_application
+    ;;
+  plugins)
+    shift
+    action="${1:-}"
+    if (($#)); then shift; fi
+    case "$action" in
+      install) install_plugins "${1:-all}" ;;
+      update) update_plugins "${1:-all}" ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    ;;
+  --version|-V|version)
+    echo "nineties $(project_version)"
+    ;;
+  --help|-h|help)
+    usage
+    ;;
+  __update-installed-plugins)
+    update_plugins all
+    ;;
+  __update-youtube-packages)
+    configure_runtime
+    update_youtube_packages
+    ;;
+  *)
+    echo "Unknown command: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

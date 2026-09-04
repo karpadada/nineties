@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+runtime_root="${1:?usage: prune-runtime-versions RUNTIME_ROOT [KEEP_COUNT]}"
+keep_count="${2:-2}"
+
+if [[ -z "$runtime_root" || "$runtime_root" == "/" ]]; then
+  echo "Refusing to prune an unsafe runtime root." >&2
+  exit 2
+fi
+if [[ ! "$keep_count" =~ ^[0-9]+$ ]] || ((keep_count < 1)); then
+  echo "KEEP_COUNT must be a positive integer." >&2
+  exit 2
+fi
+
+mkdir -p "$runtime_root"
+shopt -s nullglob
+
+runtime_dirs=()
+for candidate in "$runtime_root"/*; do
+  if [[ -d "$candidate" && ! -L "$candidate" \
+    && -f "$candidate/.nineties-runtime" \
+    && -f "$candidate/.last-used" ]]; then
+    runtime_dirs+=("$candidate")
+  fi
+done
+
+# Sort newest-first without depending on platform-specific stat flags.
+for ((index = 1; index < ${#runtime_dirs[@]}; index++)); do
+  candidate="${runtime_dirs[index]}"
+  position=$index
+  while ((position > 0)) \
+    && [[ "$candidate/.last-used" -nt "${runtime_dirs[position - 1]}/.last-used" ]]; do
+    runtime_dirs[position]="${runtime_dirs[position - 1]}"
+    position=$((position - 1))
+  done
+  runtime_dirs[position]="$candidate"
+done
+
+for ((index = keep_count; index < ${#runtime_dirs[@]}; index++)); do
+  candidate="${runtime_dirs[index]}"
+  active=false
+
+  for marker in "$candidate"/.active.*; do
+    pid="${marker##*.}"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      active=true
+    else
+      rm -f -- "$marker"
+    fi
+  done
+
+  if [[ "$active" == false ]]; then
+    rm -rf -- "$candidate"
+  fi
+done

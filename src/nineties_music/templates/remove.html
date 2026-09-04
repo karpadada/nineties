@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Remove {{ collection.title if collection else 'collection' }} - 90s Music Browser</title>
+  </head>
+  <body>
+    <p><a href="{{ url_for('index') }}">Home</a></p>
+    <h1>Remove collection</h1>
+    {% if error %}<p><strong>Error:</strong> {{ error }}</p>{% endif %}
+    {% if collection %}
+      <p>This will permanently delete the managed folder and its MP3 files:</p>
+      <p><strong>{{ collection.title }}</strong></p>
+      <p><code>{{ collection.directory }}</code></p>
+      <form method="post">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Yes, remove this collection</button>
+        <a href="{{ url_for('collection_detail', collection_id=collection.id) }}">Cancel</a>
+      </form>
+    {% endif %}
+  </body>
+</html>

@@ -1,0 +1,21 @@
+.venv/
+.state/
+downloads/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json
+cookies.txt
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Operating-system artifacts
+.DS_Store

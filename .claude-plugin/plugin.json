@@ -1,0 +1,17 @@
+{
+  "name": "nineties",
+  "version": "0.4.1",
+  "description": "Search YouTube Music and manage authorized album and playlist downloads with Nineties.",
+  "author": {
+    "name": "Nineties contributors",
+    "url": "https://github.com/karpadada"
+  },
+  "homepage": "https://github.com/karpadada/nineties#readme",
+  "repository": "https://github.com/karpadada/nineties",
+  "license": "MIT",
+  "keywords": [
+    "music",
+    "youtube-music",
+    "mp3"
+  ]
+}

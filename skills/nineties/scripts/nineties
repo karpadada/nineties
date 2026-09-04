@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! executable="$(command -v nineties)"; then
+  cat >&2 <<'EOF'
+The Nineties application is not installed.
+
+Install it with Homebrew, then start a new agent session:
+  brew tap karpadada/nineties https://github.com/karpadada/nineties.git
+  brew install karpadada/nineties/nineties
+EOF
+  exit 127
+fi
+
+if [[ -z "${NINETIES_AGENT_SESSION_ID:-}" ]]; then
+  for session_variable in CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_SESSION_ID PI_SESSION_ID; do
+    if [[ -n "${!session_variable:-}" ]]; then
+      export NINETIES_AGENT_SESSION_ID="${!session_variable}"
+      break
+    fi
+  done
+fi
+
+exec "$executable" agent "$@"
