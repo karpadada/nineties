@@ -16,6 +16,11 @@ EOF
 fi
 
 installed=false
+runs_web=false
+case "${1:-web}" in
+  web) runs_web=true ;;
+esac
+
 if ! brew tap | grep -Fxq "$tap"; then
   brew tap "$tap" "$repository_url"
 elif brew list --versions "$formula" >/dev/null 2>&1; then
@@ -27,6 +32,9 @@ fi
 
 if [ "$installed" = false ]; then
   brew install --HEAD "$formula"
+elif [ "$runs_web" = true ]; then
+  brew update
+  brew upgrade --fetch-HEAD "$formula"
 fi
 
 executable="$(brew --prefix "$formula")/bin/nineties"

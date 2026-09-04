@@ -338,6 +338,12 @@ run_application() {
   local mode="$1"
   shift
 
+  if [[ "$mode" == web ]]; then
+    if ! "$script_dir/nineties" __update-installed-plugins; then
+      echo "Could not update installed agent plugins; continuing with the existing versions." >&2
+    fi
+  fi
+
   configure_runtime
 
   local update_due=false
@@ -388,6 +394,9 @@ run_application() {
   export MUSIC_LOCAL_DATA_DIR="${MUSIC_LOCAL_DATA_DIR:-$app_data}"
   export MUSIC_YT_DLP="$runtime_environment/bin/yt-dlp"
   export NINETIES_CONTROL_EXECUTABLE="${NINETIES_CONTROL_EXECUTABLE:-$script_dir/nineties}"
+  if [[ "$mode" == web && -z "${MUSIC_LIBRARY_DIR:-}" ]]; then
+    export MUSIC_REQUIRE_PLAYER_VOLUME="${MUSIC_REQUIRE_PLAYER_VOLUME:-1}"
+  fi
   export PYTHONPATH="$package_root/src"
   "$runtime_environment/bin/python" -m nineties_music "$mode" "$@"
 }

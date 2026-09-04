@@ -38,6 +38,21 @@ def test_local_storage_is_used_when_player_is_absent(tmp_path: Path) -> None:
     assert config.state_dir == (project / ".state").resolve()
 
 
+def test_player_volume_can_be_required_by_the_installed_web_launcher(
+    tmp_path: Path,
+) -> None:
+    config = AppConfig.from_environment(
+        project_root=tmp_path / "project",
+        environment={
+            "MUSIC_VOLUME_ROOT": str(tmp_path / "missing"),
+            "MUSIC_REQUIRE_PLAYER_VOLUME": "1",
+        },
+    )
+
+    assert config.player_volume is None
+    assert config.require_player_volume is True
+
+
 def test_installed_app_can_put_local_storage_outside_project(tmp_path: Path) -> None:
     project = tmp_path / "read-only-project"
     app_data = tmp_path / "app-data"

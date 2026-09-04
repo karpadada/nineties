@@ -142,6 +142,11 @@ def create_app(
     app.extensions["music_discovery"] = music_discovery
     app.extensions["download_manager"] = download_manager
 
+    def player_storage_available() -> bool:
+        return not config.require_player_volume or (
+            config.player_volume is not None and config.player_volume.is_dir()
+        )
+
     @app.context_processor
     def security_context() -> dict[str, str]:
         return {"csrf_token": csrf_token}
@@ -152,12 +157,9 @@ def create_app(
             abort(414)
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
             return
-        origin = request.headers.get("Origin")
-        if origin is not None and origin != request.host_url.rstrip("/"):
-            abort(403)
         supplied_token = request.form.get("_csrf_token", "")
         if not supplied_token or not secrets.compare_digest(supplied_token, csrf_token):
-            abort(403)
+            abort(403, description="This form has expired. Reload the page and try again.")
 
     @app.after_request
     def add_security_headers(response: Response) -> Response:
@@ -173,16 +175,28 @@ def create_app(
         return response
 
     def page_context(**values: Any) -> dict[str, Any]:
-        collections = [
-            library_store.reconciled(item) for item in reversed(library_store.all())
-        ]
+        storage_available = player_storage_available()
+        collections = (
+            [
+                library_store.reconciled(item)
+                for item in reversed(library_store.all())
+            ]
+            if storage_available
+            else []
+        )
         return {
             "collections": collections,
-            "jobs": download_manager.jobs(),
+            "jobs": download_manager.jobs() if storage_available else [],
             "library_dir": str(config.library_dir),
             "player_volume": str(config.player_volume) if config.player_volume else None,
+            "storage_available": storage_available,
             **values,
         }
+
+    def storage_unavailable_page() -> tuple[str, int]:
+        return render_template(
+            "index.html", **page_context(results=None, query="")
+        ), 503
 
     @app.get("/")
     def index() -> str:
@@ -231,6 +245,8 @@ def create_app(
 
     @app.post("/downloads")
     def create_download() -> tuple[str, int] | Any:
+        if not player_storage_available():
+            return storage_unavailable_page()
         source_url = request.form.get("url", "")
         kind = request.form.get("kind")
         kind_hint = kind if kind in {"album", "playlist"} else None
@@ -249,7 +265,9 @@ def create_app(
         return redirect(url_for("collection_detail", collection_id=collection["id"]))
 
     @app.get("/collections/<collection_id>")
-    def collection_detail(collection_id: str) -> str:
+    def collection_detail(collection_id: str) -> str | tuple[str, int]:
+        if not player_storage_available():
+            return storage_unavailable_page()
         collection = library_store.get(collection_id)
         if collection is None:
             abort(404)
@@ -260,7 +278,9 @@ def create_app(
         )
 
     @app.get("/collections/<collection_id>/remove")
-    def confirm_remove(collection_id: str) -> str:
+    def confirm_remove(collection_id: str) -> str | tuple[str, int]:
+        if not player_storage_available():
+            return storage_unavailable_page()
         collection = library_store.get(collection_id)
         if collection is None:
             abort(404)
@@ -268,6 +288,8 @@ def create_app(
 
     @app.post("/collections/<collection_id>/retry")
     def retry_download(collection_id: str) -> tuple[str, int] | Any:
+        if not player_storage_available():
+            return storage_unavailable_page()
         try:
             download_manager.retry(collection_id)
         except KeyError:
@@ -286,6 +308,8 @@ def create_app(
 
     @app.post("/collections/<collection_id>/remove")
     def perform_remove(collection_id: str) -> tuple[str, int] | Any:
+        if not player_storage_available():
+            return storage_unavailable_page()
         try:
             remove_collection(library_store, download_manager, collection_id)
         except KeyError:
@@ -299,6 +323,8 @@ def create_app(
 
     @app.get("/api/jobs")
     def api_jobs() -> Any:
+        if not player_storage_available():
+            return jsonify({"jobs": [], "storage_available": False}), 503
         jobs = []
         for item in download_manager.jobs():
             jobs.append(

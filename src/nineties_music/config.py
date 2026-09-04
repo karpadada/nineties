@@ -44,6 +44,7 @@ class AppConfig:
     host: str = field(default=LOOPBACK_HOST, init=False)
     port: int = 4310
     yt_dlp_executable: str = "yt-dlp"
+    require_player_volume: bool = False
 
     @classmethod
     def from_environment(
@@ -83,6 +84,10 @@ class AppConfig:
         else:
             state_dir = local_data_dir / ".state"
         yt_dlp_executable = _value(environment, "MUSIC_YT_DLP") or "yt-dlp"
+        require_player_volume = (
+            (_value(environment, "MUSIC_REQUIRE_PLAYER_VOLUME") or "").casefold()
+            in {"1", "true", "yes", "on"}
+        )
         raw_port = _value(environment, "MUSIC_PORT") or "4310"
         try:
             port = int(raw_port)
@@ -97,4 +102,5 @@ class AppConfig:
             player_volume=player_volume,
             yt_dlp_executable=yt_dlp_executable,
             port=port,
+            require_player_volume=require_player_volume,
         )

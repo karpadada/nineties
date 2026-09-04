@@ -12,7 +12,8 @@ curl -fsSL https://raw.githubusercontent.com/karpadada/nineties/main/run.sh | sh
 ```
 
 Open <http://127.0.0.1:4310>. The repository's `run.sh` uses Homebrew to install
-Nineties when needed, then starts it.
+Nineties when needed. On later runs it upgrades the application, refreshes any
+installed Nineties agent plugins, and then starts the web app.
 
 Optionally, install the plugin for every supported AI agent already on your
 computer:
@@ -59,8 +60,10 @@ runtime environment is created.
 
 When a `Music` volume is mounted under `/Volumes`, the app automatically
 uses its `Music` directory and stores its database in `.nineties-music` on the
-device. Otherwise, the Homebrew launcher uses its app-data directory as
-described below. Direct Python development uses `./downloads/` and `./.state/`.
+device. If the installed web app starts without that volume, it prominently
+disables downloads instead of silently using local storage. Connect the disk
+and restart Nineties. Direct Python development uses `./downloads/` and
+`./.state/`.
 Paths can also be selected explicitly:
 
 ```sh
@@ -85,8 +88,9 @@ restores and uses its last working runtime. A first launch still requires a
 network connection. Nineties automatically keeps the two most recently used
 successful runtime versions and removes older inactive versions.
 
-When no supported player is mounted, installed runs store music and database
-data under `$XDG_DATA_HOME/nineties-music`.
+One-shot agent commands continue to use local app-data storage when no supported
+player is mounted. The installed web app requires the player unless an explicit
+`MUSIC_LIBRARY_DIR` is configured.
 
 ## Use with an AI agent
 
@@ -146,6 +150,11 @@ nineties plugins update codex
 Existing agent sessions continue using the plugin version they loaded. Begin a
 new session after installing or updating a plugin.
 
+The web app and agent plugins can run at the same time. Plugin commands use
+short-lived Nineties processes against the same WAL-mode SQLite database; leases
+and transactional reservations prevent concurrent downloads from claiming the
+same collection or directory.
+
 ## Configuration
 
 The Homebrew launcher and app accept these environment variables:
@@ -159,6 +168,7 @@ The Homebrew launcher and app accept these environment variables:
 | `MUSIC_PORT` | `4310` | Web server port |
 | `MUSIC_LOCAL_DATA_DIR` | Project directory locally; app data directory when installed | Fallback music and state root |
 | `MUSIC_APP_DATA_DIR` | `$XDG_DATA_HOME/nineties-music`, or `~/.local/share/nineties-music` | Writable runtime and local-data root |
+| `MUSIC_REQUIRE_PLAYER_VOLUME` | Enabled by the installed web launcher | Disable web downloads unless the player was mounted at startup |
 
 `MUSIC_YT_DLP` can override the downloader executable for local development.
 The Homebrew launcher sets it automatically to the executable in its managed

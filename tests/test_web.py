@@ -292,15 +292,115 @@ def test_local_web_security_boundary(tmp_path: Path) -> None:
 
     assert client.get("/", headers={"Host": "attacker.example"}).status_code == 400
     assert client.post("/downloads", data={"url": url}).status_code == 403
-    assert (
-        client.post(
-            "/downloads",
-            headers={"Origin": "https://attacker.example"},
-            data=csrf_form(app, url=url),
-        ).status_code
-        == 403
-    )
     assert store.all() == []
+
+
+def test_valid_csrf_token_is_authoritative_for_browser_posts(tmp_path: Path) -> None:
+    app, store = make_app(tmp_path)
+    response = app.test_client().post(
+        "/downloads",
+        base_url="http://127.0.0.1:4310",
+        headers={"Origin": "null"},
+        data=csrf_form(
+            app,
+            url="https://music.youtube.com/browse/album-id",
+            kind="album",
+        ),
+    )
+
+    assert response.status_code == 302
+    assert len(store.all()) == 1
+
+
+def test_rejected_form_explains_how_to_recover(tmp_path: Path) -> None:
+    app, _ = make_app(tmp_path)
+
+    response = app.test_client().post(
+        "/downloads",
+        data={"url": "https://music.youtube.com/browse/album-id"},
+    )
+
+    assert response.status_code == 403
+    assert b"This form has expired. Reload the page and try again." in response.data
+
+
+def test_missing_required_player_disables_downloads(tmp_path: Path) -> None:
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=tmp_path / "fallback-music",
+        state_dir=tmp_path / "fallback-state",
+        require_player_volume=True,
+    )
+    store = LibraryStore(config.state_dir, config.library_dir)
+    manager = DownloadManager(
+        store, FakeDownloader(), start_worker=False  # type: ignore[arg-type]
+    )
+    app = create_app(
+        config,
+        discovery=FakeDiscovery(),  # type: ignore[arg-type]
+        manager=manager,
+        store=store,
+        start_worker=False,
+    )
+    app.testing = True
+    client = app.test_client()
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert b"Music storage is not connected" in home.data
+    assert b"Downloads are disabled" in home.data
+    assert b"fallback-music" not in home.data
+    assert b"Inspect and download</button>" in home.data
+    assert b"disabled aria-disabled" in home.data
+
+    response = client.post(
+        "/downloads",
+        data=csrf_form(
+            app,
+            url="https://music.youtube.com/browse/album-id",
+            kind="album",
+        ),
+    )
+    assert response.status_code == 503
+    assert b"Music storage is not connected" in response.data
+    assert store.all() == []
+    assert client.get("/api/jobs").status_code == 503
+
+
+def test_required_player_allows_downloads_when_mounted(tmp_path: Path) -> None:
+    player = tmp_path / "Music"
+    player.mkdir()
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=player / "Music",
+        state_dir=player / ".nineties-music",
+        player_volume=player,
+        require_player_volume=True,
+    )
+    store = LibraryStore(config.state_dir, config.library_dir)
+    manager = DownloadManager(
+        store, FakeDownloader(), start_worker=False  # type: ignore[arg-type]
+    )
+    app = create_app(
+        config,
+        discovery=FakeDiscovery(),  # type: ignore[arg-type]
+        manager=manager,
+        store=store,
+        start_worker=False,
+    )
+    app.testing = True
+
+    response = app.test_client().post(
+        "/downloads",
+        data=csrf_form(
+            app,
+            url="https://music.youtube.com/browse/album-id",
+            kind="album",
+        ),
+    )
+
+    assert response.status_code == 302
+    assert len(store.all()) == 1
 
 
 def test_request_body_limit_and_security_headers(tmp_path: Path) -> None:

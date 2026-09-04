@@ -100,6 +100,58 @@ def test_remote_runner_refreshes_tap_and_installs_head(tmp_path: Path) -> None:
     assert app_log.read_text(encoding="utf-8").splitlines() == ["--version"]
 
 
+def test_remote_runner_upgrades_an_existing_app_before_web_start(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    brew_log = tmp_path / "brew.log"
+    app_log = tmp_path / "app.log"
+
+    fake_brew = fake_bin / "brew"
+    fake_brew.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_BREW_LOG\"\n"
+        "if [ \"$*\" = 'tap' ]; then\n"
+        "  printf '%s\\n' 'karpadada/nineties'\n"
+        "elif [ \"$1\" = '--prefix' ]; then\n"
+        "  printf '%s\\n' \"$FAKE_BREW_PREFIX\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_brew.chmod(0o755)
+    fake_app = prefix / "bin/nineties"
+    fake_app.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"${*:-web}\" >> \"$FAKE_APP_LOG\"\n",
+        encoding="utf-8",
+    )
+    fake_app.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "FAKE_BREW_LOG": str(brew_log),
+            "FAKE_BREW_PREFIX": str(prefix),
+            "FAKE_APP_LOG": str(app_log),
+        }
+    )
+
+    subprocess.run([ROOT / "run.sh"], check=True, env=environment)
+
+    assert brew_log.read_text(encoding="utf-8").splitlines() == [
+        "tap",
+        "list --versions karpadada/nineties/nineties",
+        "update",
+        "upgrade --fetch-HEAD karpadada/nineties/nineties",
+        "--prefix karpadada/nineties/nineties",
+    ]
+    assert app_log.read_text(encoding="utf-8").splitlines() == ["web"]
+
+
 def test_remote_runner_repairs_legacy_install_without_executable(
     tmp_path: Path,
 ) -> None:
@@ -224,10 +276,14 @@ def test_homebrew_launcher_updates_per_session_and_every_web_start(tmp_path: Pat
     fake_bin.mkdir()
     uv_log = tmp_path / "uv.log"
     python_log = tmp_path / "python.log"
+    player_required_log = tmp_path / "player-required.log"
+    codex_log = tmp_path / "codex.log"
     runtime_python = tmp_path / "runtime-python"
     runtime_python.write_text(
         "#!/usr/bin/env bash\n"
-        "printf '%s\\n' \"$*\" >> \"$FAKE_PYTHON_LOG\"\n",
+        "printf '%s\\n' \"$*\" >> \"$FAKE_PYTHON_LOG\"\n"
+        "printf '%s\\n' \"${MUSIC_REQUIRE_PLAYER_VOLUME:-}\" "
+        ">> \"$FAKE_PLAYER_REQUIRED_LOG\"\n",
         encoding="utf-8",
     )
     runtime_python.chmod(0o755)
@@ -247,6 +303,26 @@ def test_homebrew_launcher_updates_per_session_and_every_web_start(tmp_path: Pat
         encoding="utf-8",
     )
     fake_uv.chmod(0o755)
+    fake_codex = fake_bin / "codex"
+    fake_codex.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_CODEX_LOG\"\n"
+        "if [[ \"$*\" == 'plugin list --json' ]]; then\n"
+        "  printf '%s\\n' "
+        "'{\"installed\":[{\"pluginId\":\"nineties@nineties\"}]}'\n"
+        "elif [[ \"$*\" == 'plugin marketplace list --json' ]]; then\n"
+        "  printf '%s\\n' "
+        "'{\"marketplaces\":[{\"name\":\"nineties\",'"
+        "'\"marketplaceSource\":{\"source\":'"
+        "'\"https://github.com/karpadada/nineties.git\"}}]}'\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    for command_name in ("claude", "pi"):
+        fake_command = fake_bin / command_name
+        fake_command.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+        fake_command.chmod(0o755)
 
     environment = os.environ.copy()
     environment.update(
@@ -255,6 +331,8 @@ def test_homebrew_launcher_updates_per_session_and_every_web_start(tmp_path: Pat
             "MUSIC_APP_DATA_DIR": str(tmp_path / "app-data"),
             "FAKE_UV_LOG": str(uv_log),
             "FAKE_PYTHON_LOG": str(python_log),
+            "FAKE_PLAYER_REQUIRED_LOG": str(player_required_log),
+            "FAKE_CODEX_LOG": str(codex_log),
             "FAKE_RUNTIME_PYTHON": str(runtime_python),
             "NINETIES_AGENT_SESSION_ID": "session-one",
         }
@@ -284,6 +362,23 @@ def test_homebrew_launcher_updates_per_session_and_every_web_start(tmp_path: Pat
         "-m nineties_music agent status",
         "-m nineties_music web",
         "-m nineties_music web",
+    ]
+    assert player_required_log.read_text(encoding="utf-8").splitlines() == [
+        "",
+        "",
+        "",
+        "1",
+        "1",
+    ]
+    assert codex_log.read_text(encoding="utf-8").splitlines() == [
+        "plugin list --json",
+        "plugin marketplace list --json",
+        "plugin marketplace upgrade nineties",
+        "plugin add nineties@nineties",
+        "plugin list --json",
+        "plugin marketplace list --json",
+        "plugin marketplace upgrade nineties",
+        "plugin add nineties@nineties",
     ]
 
 
