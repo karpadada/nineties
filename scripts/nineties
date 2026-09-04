@@ -3,6 +3,7 @@ set -euo pipefail
 
 repository="karpadada/nineties"
 repository_url="https://github.com/$repository"
+repository_git_url="$repository_url.git"
 marketplace="nineties"
 brew_formula="${NINETIES_BREW_FORMULA:-karpadada/nineties/nineties}"
 active_marker=""
@@ -54,6 +55,14 @@ codex_marketplace_configured() {
       | grep -Eq '"name"[[:space:]]*:[[:space:]]*"nineties"'
 }
 
+codex_marketplace_uses_repository() {
+  local marketplaces
+  marketplaces="$(codex plugin marketplace list --json 2>/dev/null)" || return 1
+  marketplaces="$(printf '%s' "$marketplaces" | tr -d '[:space:]')"
+  [[ "$marketplaces" == *"\"name\":\"$marketplace\""* \
+    && "$marketplaces" == *"\"source\":\"$repository_git_url\""* ]]
+}
+
 codex_plugin_installed() {
   if ! command -v codex >/dev/null 2>&1; then
     return 1
@@ -85,7 +94,12 @@ pi_plugin_installed() {
 install_codex_plugin() {
   require_command codex
   if codex_marketplace_configured; then
-    codex plugin marketplace upgrade "$marketplace"
+    if codex_marketplace_uses_repository; then
+      codex plugin marketplace upgrade "$marketplace"
+    else
+      codex plugin marketplace remove "$marketplace"
+      codex plugin marketplace add "$repository"
+    fi
   else
     codex plugin marketplace add "$repository"
   fi
@@ -116,7 +130,12 @@ install_pi_plugin() {
 }
 
 update_codex_plugin() {
-  codex plugin marketplace upgrade "$marketplace"
+  if codex_marketplace_uses_repository; then
+    codex plugin marketplace upgrade "$marketplace"
+  else
+    codex plugin marketplace remove "$marketplace"
+    codex plugin marketplace add "$repository"
+  fi
   codex plugin add "nineties@$marketplace"
 }
 

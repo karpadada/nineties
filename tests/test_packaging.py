@@ -418,6 +418,11 @@ def test_plugin_update_refreshes_installed_codex_plugin(tmp_path: Path) -> None:
         "printf '%s\\n' \"$*\" >> \"$FAKE_CODEX_LOG\"\n"
         "if [[ \"$*\" == 'plugin list --json' ]]; then\n"
         "  printf '%s\\n' '{\"installed\": []}'\n"
+        "elif [[ \"$*\" == 'plugin marketplace list --json' ]]; then\n"
+        "  printf '%s\\n' "
+        "'{\"marketplaces\":[{\"name\":\"nineties\",'"
+        "'\"marketplaceSource\":{\"source\":'"
+        "'\"https://github.com/karpadada/nineties.git\"}}]}'\n"
         "fi\n",
         encoding="utf-8",
     )
@@ -439,6 +444,7 @@ def test_plugin_update_refreshes_installed_codex_plugin(tmp_path: Path) -> None:
 
     assert codex_log.read_text(encoding="utf-8").splitlines() == [
         "plugin list --json",
+        "plugin marketplace list --json",
         "plugin marketplace upgrade nineties",
         "plugin add nineties@nineties",
     ]
