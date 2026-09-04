@@ -30,14 +30,6 @@ including Deno for `yt-dlp`'s YouTube JavaScript challenge handling.
 
 ## Install and run
 
-While the GitHub repository is private, authenticate Git before installing the
-tap. GitHub CLI can configure Git's credential helper:
-
-```sh
-gh auth login --hostname github.com
-gh auth setup-git
-```
-
 Install Nineties directly from its GitHub-hosted Homebrew tap:
 
 ```sh
