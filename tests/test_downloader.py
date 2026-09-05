@@ -875,3 +875,80 @@ def test_removal_deletes_only_collection_directory(tmp_path: Path) -> None:
     assert not target.exists()
     assert unrelated.exists()
     assert store.get(item["id"]) is None
+
+
+@pytest.mark.parametrize("remove_parent", [False, True])
+def test_removal_cleans_metadata_for_missing_directory(
+    tmp_path: Path, remove_parent: bool
+) -> None:
+    store = LibraryStore(tmp_path / "state", tmp_path / "music")
+    manager = DownloadManager(store, FakeDownloader(), start_worker=False)  # type: ignore[arg-type]
+    item = manager.enqueue("https://music.youtube.com/playlist?list=abc")
+    target = store.safe_collection_path(item["directory"])
+    target.mkdir(parents=True)
+    track = target / "01 - Fictional Track.mp3"
+    track.write_bytes(b"synthetic-mp3-data")
+    store.update(item["id"], {
+        "status": "complete",
+        "files": [str(track.relative_to(store.library_dir))],
+    })
+    track.unlink()
+    target.rmdir()
+    if remove_parent:
+        target.parent.rmdir()
+
+    remove_collection(store, manager, item["id"])
+
+    assert store.get(item["id"]) is None
+    with sqlite3.connect(store.database_path) as connection:
+        assert connection.execute("SELECT * FROM collection_files").fetchall() == []
+    assert not target.exists()
+    assert manager.enqueue("https://music.youtube.com/playlist?list=abc")
+
+
+@pytest.mark.parametrize("directory_disappears", [False, True])
+def test_removal_handles_directory_disappearing_during_delete(
+    tmp_path: Path, monkeypatch, directory_disappears: bool
+) -> None:
+    store = LibraryStore(tmp_path / "state", tmp_path / "music")
+    manager = DownloadManager(store, FakeDownloader(), start_worker=False)  # type: ignore[arg-type]
+    item = manager.enqueue("https://music.youtube.com/playlist?list=abc")
+    target = store.safe_collection_path(item["directory"])
+    target.mkdir(parents=True)
+    store.update(item["id"], {"status": "complete"})
+
+    def disappearing_rmtree(path):
+        if directory_disappears:
+            path.rmdir()
+        raise FileNotFoundError("Removed concurrently")
+
+    monkeypatch.setattr("nineties_music.downloader.shutil.rmtree", disappearing_rmtree)
+    if directory_disappears:
+        remove_collection(store, manager, item["id"])
+        assert store.get(item["id"]) is None
+    else:
+        with pytest.raises(FileNotFoundError):
+            remove_collection(store, manager, item["id"])
+        assert store.get(item["id"])["status"] == "complete"
+        assert target.exists()
+
+
+def test_removal_releases_claim_after_path_validation_failure(tmp_path: Path) -> None:
+    store = LibraryStore(tmp_path / "state", tmp_path / "music")
+    manager = DownloadManager(store, FakeDownloader(), start_worker=False)  # type: ignore[arg-type]
+    item = manager.enqueue("https://music.youtube.com/playlist?list=abc")
+    target = store.safe_collection_path(item["directory"])
+    target.parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    store.update(item["id"], {"status": "complete"})
+    target.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ManifestError):
+        remove_collection(store, manager, item["id"])
+
+    assert store.get(item["id"])["status"] == "complete"
+    assert outside.is_dir()
+    target.unlink()
+    remove_collection(store, manager, item["id"])
+    assert store.get(item["id"]) is None

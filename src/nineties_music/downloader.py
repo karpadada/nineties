@@ -580,14 +580,20 @@ def remove_collection(
         collection = store.claim_removal(collection_id, removal_token)
     if collection is None:
         raise DownloadError("A queued or running download cannot be removed.")
-    target = store.safe_collection_path(collection["directory"])
     try:
+        target = store.safe_collection_path(collection["directory"])
         if target.is_symlink():
             raise ManifestError("Refusing to remove a symlinked collection directory")
         if target.exists():
             if not target.is_dir():
                 raise ManifestError("The managed collection path is not a directory")
-            shutil.rmtree(target)
+            try:
+                shutil.rmtree(target)
+            except FileNotFoundError:
+                # Another process may have removed the folder after our check.
+                # Keep the metadata if only a child disappeared during removal.
+                if target.exists() or target.is_symlink():
+                    raise
         if not store.finish_removal(collection_id, removal_token):
             raise ManifestError("The collection removal claim is no longer active")
     except Exception:
