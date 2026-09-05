@@ -80,6 +80,8 @@ Nineties recognizes the configured `Music` volume by exact name, then uses
 macOS device metadata to eject only removable external disks exposed by the
 same physical USB player. This includes the player's `ECHO NANO` volume without
 ejecting unrelated external disks.
+Open Nineties pages continue checking the connection state and reload after the
+same player is reconnected and its on-device library database is available.
 
 The launcher checks for compatible updates to `ytmusicapi`, `yt-dlp`, and
 `yt-dlp-ejs` whenever the web API starts and on the first Nineties skill call in

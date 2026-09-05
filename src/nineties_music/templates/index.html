@@ -6,6 +6,7 @@
     <title>90s Music Browser</title>
   </head>
   <body>
+    <span id="storage-state" data-storage-url="{{ url_for('api_storage') }}" data-storage-available="{{ 'true' if storage_available else 'false' }}" hidden></span>
     <h1>90s Music Browser</h1>
     <p>Find an album or playlist and copy it to your MP3 music directory.</p>
 
@@ -151,6 +152,7 @@
     {% endif %}
     {% endif %}
 
+    <script src="{{ url_for('static', filename='storage.js') }}"></script>
     <script src="{{ url_for('static', filename='jobs.js') }}"></script>
   </body>
 </html>

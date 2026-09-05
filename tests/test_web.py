@@ -353,6 +353,7 @@ def test_missing_required_player_disables_downloads(tmp_path: Path) -> None:
     assert b"fallback-music" not in home.data
     assert b"Inspect and download</button>" in home.data
     assert b"disabled aria-disabled" in home.data
+    assert b'data-storage-available="false"' in home.data
 
     response = client.post(
         "/downloads",
@@ -366,6 +367,7 @@ def test_missing_required_player_disables_downloads(tmp_path: Path) -> None:
     assert b"Music storage is not connected" in response.data
     assert store.all() == []
     assert client.get("/api/jobs").status_code == 503
+    assert client.get("/api/storage").get_json() == {"storage_available": False}
 
 
 def test_required_player_allows_downloads_when_mounted(tmp_path: Path) -> None:
@@ -488,6 +490,14 @@ def test_safely_remove_route_ejects_player(tmp_path: Path, monkeypatch) -> None:
     assert unavailable.status_code == 503
     assert unavailable.get_json() == {"jobs": [], "storage_available": False}
 
+    monkeypatch.setattr(
+        "nineties_music.web.os.path.ismount", lambda path: path == player
+    )
+    reconnected = app.test_client().get("/api/storage")
+
+    assert reconnected.get_json() == {"storage_available": True}
+    assert app.test_client().get("/api/jobs").status_code == 200
+
 
 def test_job_poll_handles_storage_disappearing_during_request(
     tmp_path: Path, monkeypatch
@@ -553,6 +563,16 @@ def test_job_poll_script_stops_after_storage_is_unavailable(tmp_path: Path) -> N
     assert response.status_code == 200
     assert b"response.status === 503" in response.data
     assert b"Music storage is disconnected." in response.data
+
+
+def test_storage_poll_reloads_when_connection_state_changes(tmp_path: Path) -> None:
+    app, _ = make_app(tmp_path)
+
+    response = app.test_client().get("/static/storage.js")
+
+    assert response.status_code == 200
+    assert b"data.storage_available" in response.data
+    assert b"window.location.reload()" in response.data
 
 
 def test_request_body_limit_and_security_headers(tmp_path: Path) -> None:

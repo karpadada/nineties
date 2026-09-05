@@ -6,9 +6,11 @@
     <title>Music storage safely removed</title>
   </head>
   <body>
+    <span id="storage-state" data-storage-url="{{ url_for('api_storage') }}" data-storage-available="false" hidden></span>
     <h1>Music storage safely removed</h1>
     <p>You can now disconnect the music player.</p>
     <p>Safely removed: {% for volume in volumes %}<code>{{ volume }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
     <p><a href="{{ url_for('index') }}">Return to Nineties</a></p>
+    <script src="{{ url_for('static', filename='storage.js') }}"></script>
   </body>
 </html>

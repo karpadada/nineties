@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import secrets
 import threading
 from functools import lru_cache
@@ -148,11 +149,21 @@ def create_app(
     def player_storage_available() -> bool:
         if config.player_volume is None:
             return not config.require_player_volume
-        return (
-            not storage_unavailable.is_set()
-            and config.player_volume.is_dir()
-            and config.state_dir.is_dir()
+        paths_available = (
+            config.player_volume.is_dir() and config.state_dir.is_dir()
         )
+        if not paths_available:
+            return False
+        if not storage_unavailable.is_set():
+            return True
+        if not os.path.ismount(config.player_volume):
+            return False
+        try:
+            library_store.all()
+        except (ManifestError, OSError):
+            return False
+        storage_unavailable.clear()
+        return True
 
     @app.context_processor
     def security_context() -> dict[str, str]:
@@ -374,5 +385,9 @@ def create_app(
                 }
             )
         return jsonify({"jobs": jobs})
+
+    @app.get("/api/storage")
+    def api_storage() -> Any:
+        return jsonify({"storage_available": player_storage_available()})
 
     return app
