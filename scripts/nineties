@@ -27,7 +27,9 @@ usage() {
   cat <<'EOF'
 Usage:
   nineties [web]
-  nineties agent <search|download|status|library|safely-remove> ...
+  nineties web [--local | --simulator] [--simulator-dir PATH]
+  nineties simulator [web|connect|disconnect|status|agent ...] [--directory PATH]
+  nineties agent [--local | --simulator] <search|download|status|library|safely-remove> ...
   nineties update
   nineties plugins install [codex|claude|pi|all]
   nineties plugins update [codex|claude|pi|all]
@@ -338,7 +340,11 @@ run_application() {
   local mode="$1"
   shift
 
-  if [[ "$mode" == web ]]; then
+  local runs_web=false
+  if [[ "$mode" == web || ( "$mode" == simulator && "${1:-web}" == web ) ]]; then
+    runs_web=true
+  fi
+  if [[ "$runs_web" == true ]]; then
     if ! "$script_dir/nineties" __update-installed-plugins; then
       echo "Could not update installed agent plugins; continuing with the existing versions." >&2
     fi
@@ -355,7 +361,7 @@ run_application() {
     || ! -x "$runtime_environment/bin/python" \
     || ! -x "$runtime_environment/bin/yt-dlp" ]]; then
     update_due=true
-  elif [[ "$mode" == web ]]; then
+  elif [[ "$runs_web" == true ]]; then
     update_due=true
   elif [[ -n "$session_marker" ]]; then
     if [[ ! -f "$session_marker" ]]; then
@@ -409,6 +415,10 @@ case "${1:-web}" in
   agent)
     shift
     run_application agent "$@"
+    ;;
+  simulator)
+    shift
+    run_application simulator "$@"
     ;;
   update)
     shift

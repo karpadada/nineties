@@ -53,6 +53,11 @@ installed=false
 runs_web=false
 case "${1:-web}" in
   web) runs_web=true ;;
+  simulator)
+    case "${2:-web}" in
+      web|--directory) runs_web=true ;;
+    esac
+    ;;
 esac
 
 if ! brew tap </dev/null | grep -Fxq "$tap"; then

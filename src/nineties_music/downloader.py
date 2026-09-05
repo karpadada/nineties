@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
@@ -329,11 +330,13 @@ class DownloadManager:
         start_worker: bool = True,
         *,
         max_pending: int = MAX_PENDING_DOWNLOADS,
+        storage_operation: Callable[[], AbstractContextManager[None]] = nullcontext,
     ) -> None:
         if max_pending < 1:
             raise ValueError("max_pending must be at least 1")
         self.store = store
         self.downloader = downloader
+        self.storage_operation = storage_operation
         self._queue: queue.Queue[str] = queue.Queue(maxsize=max_pending)
         self._enqueue_lock = threading.Lock()
         self._active_id: str | None = None
@@ -356,6 +359,8 @@ class DownloadManager:
         title_hint = (title_hint or "").strip()[:200] or None
         artist_hint = (artist_hint or "").strip()[:200] or None
         with self._enqueue_lock:
+            with self.storage_operation():
+                pass
             if self._queue.full():
                 raise DownloadError("The download queue is full. Try again later.")
             probed = self.downloader.probe(
@@ -397,7 +402,11 @@ class DownloadManager:
                 "updated_at": now,
             }
             try:
-                self.store.add(collection)
+                # Recheck after the network probe; disconnect may have won
+                # while we were inspecting the source. Reserve atomically
+                # with respect to simulated disconnects in other processes.
+                with self.storage_operation():
+                    self.store.add(collection)
             except ManifestError as exc:
                 existing = self.store.find_by_source(probed["source_id"])
                 if existing:
@@ -424,7 +433,7 @@ class DownloadManager:
         return bool(collection and collection.get("status") in ACTIVE_STATUSES)
 
     def retry(self, collection_id: str) -> dict[str, Any]:
-        with self._enqueue_lock:
+        with self._enqueue_lock, self.storage_operation():
             collection = self.store.get(collection_id)
             if collection is None:
                 raise KeyError(collection_id)
@@ -567,7 +576,8 @@ def remove_collection(
     store: LibraryStore, manager: DownloadManager, collection_id: str
 ) -> None:
     removal_token = uuid.uuid4().hex
-    collection = store.claim_removal(collection_id, removal_token)
+    with manager.storage_operation():
+        collection = store.claim_removal(collection_id, removal_token)
     if collection is None:
         raise DownloadError("A queued or running download cannot be removed.")
     target = store.safe_collection_path(collection["directory"])

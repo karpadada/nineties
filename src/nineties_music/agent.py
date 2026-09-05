@@ -73,6 +73,8 @@ class MusicAgentAPI:
         return {"collection": _summary(collection)}
 
     def status(self, job_id: str | None = None) -> StatusResponse:
+        if self.services.simulator:
+            self.services.simulator.require_connected()
         if job_id:
             collection = self.services.store.get(job_id)
             if collection is None:
@@ -83,6 +85,8 @@ class MusicAgentAPI:
         return {"jobs": [_summary(item) for item in collections]}
 
     def library(self, query: str | None = None, limit: int = 50) -> LibraryResponse:
+        if self.services.simulator:
+            self.services.simulator.require_connected()
         normalized_query = (query or "").strip().casefold()
         limit = max(1, min(limit, 100))
         collections = reversed(self.services.store.all())

@@ -45,6 +45,8 @@ class AppConfig:
     port: int = 4310
     yt_dlp_executable: str = "yt-dlp"
     require_player_volume: bool = False
+    storage_mode: str = "auto"
+    simulator_dir: Path | None = None
 
     @classmethod
     def from_environment(
@@ -52,6 +54,8 @@ class AppConfig:
         *,
         project_root: Path | None = None,
         environment: Mapping[str, str] | None = None,
+        storage_mode: str | None = None,
+        simulator_dir: Path | None = None,
     ) -> "AppConfig":
         project_root = (project_root or Path(__file__).resolve().parents[2]).resolve()
         if environment is None:
@@ -61,9 +65,24 @@ class AppConfig:
         local_data_dir = Path(
             _value(environment, "MUSIC_LOCAL_DATA_DIR") or project_root
         ).expanduser()
+        storage_mode = (
+            storage_mode or _value(environment, "MUSIC_STORAGE_MODE") or "auto"
+        )
+        if storage_mode not in {"auto", "local", "simulator"}:
+            raise ValueError("MUSIC_STORAGE_MODE must be auto, local, or simulator")
         player_volume = None
-        if explicit_library:
+        if storage_mode == "simulator":
+            simulator_dir = Path(
+                simulator_dir
+                or _value(environment, "MUSIC_SIMULATOR_DIR")
+                or local_data_dir / "simulator"
+            ).expanduser().resolve()
+            player_volume = simulator_dir / DEFAULT_PLAYER_VOLUME
+            library_dir = player_volume / PLAYER_LIBRARY_DIRECTORY
+        elif explicit_library:
             library_dir = Path(explicit_library).expanduser()
+        elif storage_mode == "local":
+            library_dir = local_data_dir / "downloads"
         else:
             volume_root = Path(
                 _value(environment, "MUSIC_VOLUME_ROOT") or "/Volumes"
@@ -77,7 +96,9 @@ class AppConfig:
                 if player_volume
                 else local_data_dir / "downloads"
             )
-        if explicit_state:
+        if storage_mode == "simulator":
+            state_dir = player_volume / PLAYER_STATE_DIRECTORY
+        elif explicit_state:
             state_dir = Path(explicit_state).expanduser()
         elif player_volume:
             state_dir = player_volume / PLAYER_STATE_DIRECTORY
@@ -85,7 +106,8 @@ class AppConfig:
             state_dir = local_data_dir / ".state"
         yt_dlp_executable = _value(environment, "MUSIC_YT_DLP") or "yt-dlp"
         require_player_volume = (
-            (_value(environment, "MUSIC_REQUIRE_PLAYER_VOLUME") or "").casefold()
+            storage_mode == "auto"
+            and (_value(environment, "MUSIC_REQUIRE_PLAYER_VOLUME") or "").casefold()
             in {"1", "true", "yes", "on"}
         )
         raw_port = _value(environment, "MUSIC_PORT") or "4310"
@@ -103,4 +125,6 @@ class AppConfig:
             yt_dlp_executable=yt_dlp_executable,
             port=port,
             require_player_volume=require_player_volume,
+            storage_mode=storage_mode,
+            simulator_dir=simulator_dir if storage_mode == "simulator" else None,
         )

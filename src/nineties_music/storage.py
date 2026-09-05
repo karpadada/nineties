@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from .config import AppConfig
-from .downloader import DownloadManager
+from .downloader import DownloadError, DownloadManager
+from .simulator import VirtualPlayer
 
 
 _DISKUTIL = "/usr/sbin/diskutil"
@@ -33,6 +34,13 @@ def safely_remove_player(
     config: AppConfig, downloads: DownloadManager
 ) -> SafeRemoveResult:
     """Eject every removable disk exposed by the configured USB player."""
+    if config.simulator_dir is not None:
+        try:
+            VirtualPlayer(config.simulator_dir).disconnect(downloads.store)
+        except DownloadError as exc:
+            raise StorageError(str(exc)) from exc
+        volume = str(config.player_volume)
+        return {"safely_removed": True, "volume": volume, "volumes": [volume]}
     volume = config.player_volume
     if volume is None or not volume.is_dir():
         raise StorageError("The Music device is not connected.")

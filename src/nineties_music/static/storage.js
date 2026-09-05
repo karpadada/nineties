@@ -17,6 +17,10 @@
       })
       .then(function (data) {
         if (Boolean(data.storage_available) !== wasAvailable) {
+          if (state.dataset.storageReturnUrl) {
+            window.location.assign(state.dataset.storageReturnUrl);
+            return;
+          }
           window.location.reload();
           return;
         }

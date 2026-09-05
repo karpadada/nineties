@@ -98,6 +98,70 @@ One-shot agent commands continue to use local app-data storage when no supported
 player is mounted. The installed web app requires the player unless an explicit
 `MUSIC_LIBRARY_DIR` is configured.
 
+## Use without a physical player
+
+Keep using Nineties as a local MP3 library builder:
+
+```sh
+nineties web --local
+nineties agent --local library
+```
+
+Local mode ignores mounted players, uses the existing local-data `downloads`
+and `.state` directories, and has no eject operation. `MUSIC_LIBRARY_DIR` and
+`MUSIC_STATE_DIR` can override those paths. Set `MUSIC_STORAGE_MODE=local` in
+your environment to select it for both the web app and agent commands.
+
+## Virtual player
+
+Start a persistent virtual player for development and support:
+
+```sh
+nineties simulator
+```
+
+It starts connected on first use. The web app has **Connect**, **Disconnect**,
+and **Safely remove virtual player** controls. Connection changes are visible
+to other web and agent processes, and reconnecting restores the same library
+without restarting the web app. Restarting preserves the last connection state.
+Disconnect and safe removal both refuse while a download or collection removal
+is active. They keep the files and never invoke macOS disk ejection.
+
+```sh
+nineties simulator status
+nineties simulator disconnect
+nineties simulator connect
+nineties agent --simulator library
+nineties agent --simulator safely-remove
+```
+
+The default directory is `simulator` inside the local-data root. It contains
+`Music/Music` for audio, `Music/.nineties-music` for the real library database,
+and `device.sqlite3` for the simulated connection. To keep separate test
+players, use `nineties simulator --directory /path/to/test-player` and
+`nineties agent --simulator-dir /path/to/test-player library`, or set
+`MUSIC_SIMULATOR_DIR` consistently. `nineties web --simulator` and
+`MUSIC_STORAGE_MODE=simulator` select the same mode. Simulator mode always
+uses its own music and state paths, even if physical-device path overrides
+are present in the environment.
+
+This is a folder-based storage simulator: search, download, conversion, tags,
+library reconciliation, retry, removal, and concurrent agent operations use
+the real application. It does not emulate USB, player firmware, playback,
+FAT/exFAT, capacity limits, or pulling a cable during a write. It uses the host
+filesystem and free space, and downloads still require network access.
+
+Before retiring the physical player, preserve sanitized disk metadata and
+filesystem details, and record a playback check using a small test collection.
+The existing storage tests cover the player's companion-volume ejection logic;
+firmware playback compatibility still needs an occasional physical-device check.
+
+From a checkout, run `PYTHONPATH=src uv run --locked python -m nineties_music simulator`
+to exercise the web app without the Homebrew launcher's startup updates. The
+simulator tests use isolated temporary directories and fixture downloads, so
+`uv run --locked pytest tests/test_simulator.py` needs no player or YouTube access
+once the locked development dependencies are installed.
+
 ## Use with an AI agent
 
 The repository is a plugin marketplace and an Agent Skills package. The
@@ -176,6 +240,8 @@ The Homebrew launcher and app accept these environment variables:
 | `MUSIC_LOCAL_DATA_DIR` | Project directory locally; app data directory when installed | Fallback music and state root |
 | `MUSIC_APP_DATA_DIR` | `$XDG_DATA_HOME/nineties-music`, or `~/.local/share/nineties-music` | Writable runtime and local-data root |
 | `MUSIC_REQUIRE_PLAYER_VOLUME` | Enabled by the installed web launcher | Disable web downloads unless the player was mounted at startup |
+| `MUSIC_STORAGE_MODE` | `auto` | Select automatic player discovery, `local`, or `simulator` storage |
+| `MUSIC_SIMULATOR_DIR` | Local-data `simulator` | Persistent virtual player root; used in simulator mode |
 
 `MUSIC_YT_DLP` can override the downloader executable for local development.
 The Homebrew launcher sets it automatically to the executable in its managed

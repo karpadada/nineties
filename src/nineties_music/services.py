@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 from .config import AppConfig
 from .discovery import MusicDiscovery
 from .downloader import DownloadManager, YtDlpDownloader
+from .simulator import VirtualPlayer
 from .store import LibraryStore
 from .updates import update_youtube_packages
 
@@ -15,6 +17,7 @@ class AppServices:
     store: LibraryStore
     discovery: MusicDiscovery
     downloads: DownloadManager
+    simulator: VirtualPlayer | None = None
 
 
 def create_services(
@@ -27,6 +30,7 @@ def create_services(
     recover_interrupted: bool = True,
 ) -> AppServices:
     config = config or AppConfig.from_environment()
+    simulator = VirtualPlayer(config.simulator_dir) if config.simulator_dir else None
     library_store = store or (
         manager.store
         if manager is not None
@@ -45,10 +49,14 @@ def create_services(
             compatibility_updater=update_youtube_packages,
         ),
         start_worker=start_worker,
+        storage_operation=simulator.operation if simulator else nullcontext,
     )
+    if simulator:
+        download_manager.storage_operation = simulator.operation
     return AppServices(
         config=config,
         store=library_store,
         discovery=music_discovery,
         downloads=download_manager,
+        simulator=simulator,
     )

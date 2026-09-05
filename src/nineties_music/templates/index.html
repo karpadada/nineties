@@ -10,11 +10,32 @@
     <h1>90s Music Browser</h1>
     <p>Find an album or playlist and copy it to your MP3 music directory.</p>
 
-    {% if not storage_available %}
+    {% if simulator %}
+      <p><strong>Virtual player {{ 'connected' if storage_available else 'disconnected' }}.</strong> This player stores real music files on this computer.</p>
+      <p>Music directory: <code>{{ library_dir }}</code>. Files are kept when disconnected.</p>
+      {% if storage_available %}
+        <form action="{{ url_for('safely_remove_storage') }}" method="post">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button type="submit"{% if storage_busy %} disabled{% endif %}>Safely remove virtual player</button>
+        </form>
+        <form action="{{ url_for('control_simulator', action='disconnect') }}" method="post">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button type="submit"{% if storage_busy %} disabled{% endif %}>Disconnect virtual player</button>
+        </form>
+        {% if storage_busy %}<p>Wait for all library operations to finish before disconnecting.</p>{% endif %}
+      {% else %}
+        <p role="alert">Downloads are disabled until the virtual player is connected.</p>
+        <form action="{{ url_for('control_simulator', action='connect') }}" method="post">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Connect virtual player</button>
+        </form>
+      {% endif %}
+    {% elif not storage_available %}
       <hr>
       <aside role="alert" aria-labelledby="storage-alert-title">
         <h2 id="storage-alert-title">Music storage is not connected</h2>
         <p><strong>Downloads are disabled.</strong> Connect the <code>Music</code> disk, then restart Nineties so it can safely open the library on that disk.</p>
+        <p>To keep music on this computer, start <code>nineties web --local</code>. To test a virtual player, start <code>nineties simulator</code>.</p>
       </aside>
       <hr>
     {% elif player_volume %}
@@ -68,7 +89,7 @@
                     <input type="hidden" name="kind" value="{{ result.kind }}">
                     <input type="hidden" name="title" value="{{ result.title }}">
                     <input type="hidden" name="artist" value="{{ result.creator }}">
-                    <button type="submit"{% if not storage_available %} disabled aria-disabled="true" title="Connect the Music disk and restart Nineties"{% endif %}>Download</button>
+                    <button type="submit"{% if not storage_available %} disabled aria-disabled="true" title="Connect music storage to download"{% endif %}>Download</button>
                   </form>
                 </td>
               </tr>
@@ -86,7 +107,7 @@
       <label for="url">Album or playlist URL:</label>
       <input id="url" name="url" type="url" size="60" required{% if not storage_available %} disabled{% endif %}
              placeholder="https://music.youtube.com/playlist?list=...">
-      <button type="submit"{% if not storage_available %} disabled aria-disabled="true" title="Connect the Music disk and restart Nineties"{% endif %}>Inspect and download</button>
+      <button type="submit"{% if not storage_available %} disabled aria-disabled="true" title="Connect music storage to download"{% endif %}>Inspect and download</button>
     </form>
 
     <h2>Use with an AI agent</h2>

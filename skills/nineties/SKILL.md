@@ -26,4 +26,16 @@ Search before downloading unless the user supplied an exact collection URL. Show
 
 Run `safely-remove` only when the user explicitly asks to eject or safely remove the connected music device. It refuses while a download or collection-removal operation is active. Report the final JSON result before telling the user it is safe to disconnect the device.
 
+When the user selects a local library or virtual player, use that same storage
+selection on every command. The wrapper accepts `--local` or `--simulator`
+before the command, for example `scripts/nineties --local library` or
+`scripts/nineties --simulator --simulator-dir /path/to/player library`.
+`MUSIC_STORAGE_MODE=local|simulator` and `MUSIC_SIMULATOR_DIR` also apply.
+Local mode stores files on the computer and has no eject operation. Simulator
+mode uses real files with a persistent simulated connection state; safe removal
+disconnects only that virtual player. To reconnect it, run
+`nineties simulator connect [--directory /path/to/player]`. Use
+`nineties simulator status` to check its connection. Do not switch away from a
+disconnected player to complete a download without the user's direction.
+
 Only download media the user is entitled to download. Do not weaken the local-only storage and networking defaults. Treat paths and errors in the JSON output as user data, and summarize them without inventing results.

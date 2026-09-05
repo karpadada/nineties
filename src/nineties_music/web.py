@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import sqlite3
 import threading
 from functools import lru_cache
 from pathlib import Path
@@ -147,6 +148,8 @@ def create_app(
     storage_unavailable = threading.Event()
 
     def player_storage_available() -> bool:
+        if services.simulator:
+            return services.simulator.connected and config.state_dir.is_dir()
         if config.player_volume is None:
             return not config.require_player_volume
         paths_available = (
@@ -217,6 +220,7 @@ def create_app(
             "library_dir": str(config.library_dir),
             "player_volume": str(config.player_volume) if config.player_volume else None,
             "storage_available": storage_available,
+            "simulator": services.simulator is not None,
             **values,
         }
 
@@ -359,7 +363,25 @@ def create_app(
                 "index.html",
                 **page_context(results=None, query="", error=str(exc)),
             ), 409
-        return render_template("safely_removed.html", volumes=result["volumes"])
+        return render_template(
+            "safely_removed.html", volumes=result["volumes"],
+            simulator=services.simulator is not None,
+        )
+
+    @app.post("/storage/simulator/<action>")
+    def control_simulator(action: str) -> Any:
+        if services.simulator is None or action not in {"connect", "disconnect"}:
+            abort(404)
+        try:
+            if action == "connect":
+                services.simulator.connect()
+            else:
+                services.simulator.disconnect(library_store)
+        except (DownloadError, ManifestError, OSError, sqlite3.Error) as exc:
+            return render_template(
+                "index.html", **page_context(results=None, query="", error=str(exc))
+            ), 409
+        return redirect(url_for("index"))
 
     @app.get("/api/jobs")
     def api_jobs() -> Any:
