@@ -224,6 +224,77 @@ class YtDlpDownloader:
             return self._download_once(collection, progress)
         return result
 
+    def download_track(self, raw_url: str, destination: Path) -> Path:
+        url = validate_youtube_url(raw_url)
+        target = destination.resolve()
+        try:
+            target.relative_to(self.library_dir)
+        except ValueError as exc:
+            raise DownloadError("Download path leaves the library root.") from exc
+        if target.suffix.lower() != ".mp3":
+            raise DownloadError("A synced track must use an MP3 destination.")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            return self._download_track_once(url, target)
+        except YoutubeCompatibilityError as first_error:
+            if not self._compatibility_updater():
+                raise first_error
+            try:
+                return self._download_track_once(url, target)
+            except YoutubeCompatibilityError as retry_error:
+                raise DownloadError(
+                    f"{retry_error} (compatibility packages were updated and the "
+                    "operation was retried)"
+                ) from retry_error
+
+    def _download_track_once(self, url: str, target: Path) -> Path:
+        output_template = str(target.with_suffix(".%(ext)s"))
+        command = [
+            self.executable,
+            "--no-playlist",
+            "--no-warnings",
+            "--socket-timeout",
+            "30",
+            "--retries",
+            "3",
+            "--fragment-retries",
+            "3",
+            "--format",
+            "bestaudio[protocol*=m3u8]/bestaudio",
+            "--extract-audio",
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "0",
+            "--embed-metadata",
+            "--embed-thumbnail",
+            "--convert-thumbnails",
+            "jpg",
+            "--output",
+            output_template,
+            url,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=900,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise YoutubeCompatibilityError(
+                f"Could not download that track: {exc}"
+            ) from exc
+        _cleanup_download_artifacts(target.parent)
+        if result.returncode != 0 or not target.is_file():
+            target.unlink(missing_ok=True)
+            raise YoutubeCompatibilityError(
+                _last_error(result.stderr or result.stdout)
+                or "yt-dlp did not create the synced MP3."
+            )
+        return target
+
     def _download_once(
         self,
         collection: dict[str, Any],

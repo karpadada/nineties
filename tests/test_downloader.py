@@ -158,6 +158,38 @@ def test_normalize_artist_name_removes_youtube_topic_suffix() -> None:
     assert normalize_artist_name("On Topic") == "On Topic"
 
 
+def test_individual_track_download_uses_exact_managed_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        output = command[command.index("--output") + 1]
+        Path(output.replace("%(ext)s", "mp3")).write_bytes(b"synthetic-mp3-data")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("nineties_music.downloader.subprocess.run", fake_run)
+    target = tmp_path / "Playlists" / "Sync" / "01 - Track.mp3"
+
+    result = YtDlpDownloader(tmp_path).download_track(
+        "https://music.youtube.com/watch?v=video-id", target
+    )
+
+    assert result == target
+    assert result.read_bytes() == b"synthetic-mp3-data"
+    assert "--no-playlist" in commands[0]
+    assert commands[0][commands[0].index("--format") + 1] == (
+        "bestaudio[protocol*=m3u8]/bestaudio"
+    )
+
+    with pytest.raises(DownloadError, match="leaves the library"):
+        YtDlpDownloader(tmp_path).download_track(
+            "https://music.youtube.com/watch?v=video-id",
+            tmp_path.parent / "outside.mp3",
+        )
+
+
 def test_progress_parser_accepts_yt_dlp_prefixes() -> None:
     expected = {
         "percent": "42.5%",

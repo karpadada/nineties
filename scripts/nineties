@@ -29,7 +29,7 @@ Usage:
   nineties [web]
   nineties web [--local | --simulator] [--simulator-dir PATH]
   nineties simulator [web|connect|disconnect|status|agent ...] [--directory PATH]
-  nineties agent [--local | --simulator] <search|download|status|library|safely-remove> ...
+  nineties agent [--local | --simulator] <search|track-search|download|status|library|spotify|safely-remove> ...
   nineties update
   nineties plugins install [codex|claude|pi|all]
   nineties plugins update [codex|claude|pi|all]

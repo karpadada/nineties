@@ -41,12 +41,25 @@ class AppConfig:
     library_dir: Path
     state_dir: Path
     player_volume: Path | None = None
+    credentials_dir: Path | None = None
+    spotify_client_id: str | None = None
+    spotify_support_contact: str | None = None
     host: str = field(default=LOOPBACK_HOST, init=False)
     port: int = 4310
     yt_dlp_executable: str = "yt-dlp"
     require_player_volume: bool = False
     storage_mode: str = "auto"
     simulator_dir: Path | None = None
+
+    @property
+    def private_state_dir(self) -> Path:
+        return (
+            self.credentials_dir or self.project_root / ".private-state"
+        ).resolve()
+
+    @property
+    def spotify_redirect_uri(self) -> str:
+        return f"http://{self.host}:{self.port}/spotify/callback"
 
     @classmethod
     def from_environment(
@@ -64,6 +77,10 @@ class AppConfig:
         explicit_state = _value(environment, "MUSIC_STATE_DIR")
         local_data_dir = Path(
             _value(environment, "MUSIC_LOCAL_DATA_DIR") or project_root
+        ).expanduser()
+        credentials_dir = Path(
+            _value(environment, "MUSIC_CREDENTIALS_DIR")
+            or local_data_dir / ".private-state"
         ).expanduser()
         storage_mode = (
             storage_mode or _value(environment, "MUSIC_STORAGE_MODE") or "auto"
@@ -122,6 +139,11 @@ class AppConfig:
             library_dir=library_dir.resolve(),
             state_dir=state_dir.resolve(),
             player_volume=player_volume,
+            credentials_dir=credentials_dir.resolve(),
+            spotify_client_id=_value(environment, "MUSIC_SPOTIFY_CLIENT_ID"),
+            spotify_support_contact=_value(
+                environment, "MUSIC_SPOTIFY_SUPPORT_CONTACT"
+            ),
             yt_dlp_executable=yt_dlp_executable,
             port=port,
             require_player_volume=require_player_volume,

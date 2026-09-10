@@ -1,7 +1,7 @@
 {
   "name": "nineties",
-  "version": "0.7.1",
-  "description": "Search YouTube Music and manage authorized album and playlist downloads with Nineties.",
+  "version": "0.8.0",
+  "description": "Search YouTube Music and sync authorized Spotify playlists to a Nineties music device.",
   "author": {
     "name": "Nineties contributors",
     "url": "https://github.com/karpadada"
@@ -12,13 +12,14 @@
   "keywords": [
     "music",
     "youtube-music",
+    "spotify",
     "mp3"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Nineties",
-    "shortDescription": "Search and manage your local music library.",
-    "longDescription": "Search YouTube Music and download authorized albums and playlists to an MP3-player-friendly local library.",
+    "shortDescription": "Search music and sync Spotify playlists.",
+    "longDescription": "Search YouTube Music, download authorized collections, and mirror a connected Spotify playlist to an MP3-player-friendly local library.",
     "developerName": "Nineties contributors",
     "category": "Productivity",
     "capabilities": [
@@ -28,7 +29,8 @@
     "websiteURL": "https://github.com/karpadada/nineties",
     "defaultPrompt": [
       "Search for an album with Nineties.",
-      "Show my Nineties music library."
+      "Show my Nineties music library.",
+      "List my Spotify playlists with Nineties."
     ]
   }
 }

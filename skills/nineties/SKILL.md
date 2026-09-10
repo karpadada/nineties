@@ -1,6 +1,6 @@
 ---
 name: nineties
-description: Search YouTube Music and inspect or manage the Nineties local music library. Use when the user wants to find an album or playlist, download an authorized collection, check a Nineties download, inspect their managed music, or safely remove the connected music device.
+description: Search YouTube Music, inspect or manage the Nineties local music library, and mirror a connected Spotify playlist to a music device. Use when the user wants to find an album or playlist, download an authorized collection, check a Nineties download, inspect their managed music, list Spotify playlists, sync a Spotify playlist, or safely remove the connected music device.
 ---
 
 # Nineties
@@ -16,13 +16,35 @@ The CLI prints JSON:
 
 ```sh
 <skill-directory>/scripts/nineties search "artist or collection" --limit 8
+<skill-directory>/scripts/nineties track-search "artist - track" --limit 5
 <skill-directory>/scripts/nineties download "https://music.youtube.com/playlist?list=..." --kind album
 <skill-directory>/scripts/nineties status [job-id]
 <skill-directory>/scripts/nineties library [--query "text"] [--limit 50]
+<skill-directory>/scripts/nineties spotify status
+<skill-directory>/scripts/nineties spotify playlists
+<skill-directory>/scripts/nineties spotify sync PLAYLIST_ID
+<skill-directory>/scripts/nineties spotify sync PLAYLIST_ID --match SPOTIFY_TRACK_ID=YOUTUBE_URL
 <skill-directory>/scripts/nineties safely-remove
 ```
 
 Search before downloading unless the user supplied an exact collection URL. Show the selected title, creator, kind, and URL before asking for confirmation when the user's request did not already clearly authorize that exact download. A download command waits for completion and can take a long time; report its final JSON result.
+
+For Spotify sync, run `spotify status` first. If it is not connected, direct the
+user to the returned `integration_url`; OAuth and playlist selection happen in
+the local Nineties UI. Use `spotify playlists` to present the exact available
+choices when the user has not named one. Confirm the selected playlist when it
+is ambiguous: sync treats Spotify as the source of truth and removes files for
+tracks no longer in that playlist, but only inside that playlist's managed
+directory.
+
+After `spotify sync`, report `missing_tracks` clearly. For a missing track, use
+its `suggested_query`, its candidate list, and `track-search` with improved
+queries to reason about a match. Prefer matching title, primary artist, album,
+version qualifiers, and duration. If one candidate is clearly correct, rerun
+the same playlist sync with a `--match` override. Ask the user before using an
+ambiguous override. Never use a result merely because its title is similar,
+and never substitute a live, remix, cover, or karaoke version without explicit
+authorization.
 
 Run `safely-remove` only when the user explicitly asks to eject or safely remove the connected music device. It refuses while a download or collection-removal operation is active. Report the final JSON result before telling the user it is safe to disconnect the device.
 

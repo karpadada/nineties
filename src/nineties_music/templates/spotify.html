@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spotify integration — Nineties</title>
+  </head>
+  <body>
+    <p><a href="{{ url_for('index') }}">← Back to Nineties</a></p>
+    <h1>Spotify playlist sync</h1>
+    <p>Spotify is the source of truth. Each sync copies the playlist's current order to the music directory, removes tracks deleted from the Spotify playlist, and reports anything Nineties cannot confidently find on YouTube Music.</p>
+    <p><small>Spotify supplies playlist metadata only. Audio is fetched separately from YouTube Music; only sync media you are entitled to download.</small></p>
+    <p><small><strong>Prototype notice:</strong> Spotify's API rules restrict using its content to facilitate downloads or as input to AI. Do not publish this workflow without Spotify's approval.</small></p>
+
+    {% if notice %}
+      <p><strong>{{ notice }}</strong></p>
+    {% endif %}
+    {% if error %}
+      <p><strong>Error:</strong> {{ error }}</p>
+    {% endif %}
+    {% if not storage_available %}
+      <p role="alert"><strong>Music storage is disconnected.</strong> Connect the {{ 'virtual player' if simulator else 'music device' }} before starting a sync.</p>
+    {% endif %}
+
+    {% if not configured %}
+      <h2>Developer setup required</h2>
+      <p>Create a Spotify app and register this redirect URI exactly:</p>
+      <pre><code>{{ redirect_uri }}</code></pre>
+      <p>Then start Nineties with its public client ID:</p>
+      <pre><code>MUSIC_SPOTIFY_CLIENT_ID="your-client-id" nineties</code></pre>
+      <p>No client secret is installed because Nineties uses PKCE.</p>
+    {% elif not connected %}
+      <h2>Before connecting during development</h2>
+      <p>Development mode supports up to five authorized users and requires the app owner to have Spotify Premium. The owner must add your account under <strong>Users Management / Users and Access</strong>. Send the owner:</p>
+      <ul>
+        <li>your Spotify account display name; and</li>
+        <li>the exact email address attached to that Spotify account.</li>
+      </ul>
+      {% if support_contact %}
+        <p>Send those details to: <strong>{{ support_contact }}</strong></p>
+      {% endif %}
+      <p><strong>Never send your Spotify password.</strong> After the owner confirms access, use the button below.</p>
+      <form action="{{ url_for('spotify_connect') }}" method="post">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Connect Spotify</button>
+      </form>
+    {% else %}
+      <h2>Connected account</h2>
+      {% if profile %}
+        <p>Connected as {{ profile.display_name }}.</p>
+      {% endif %}
+
+      {% if sync_active %}
+        {% set progress = sync_job.progress %}
+        <section
+          id="spotify-sync-progress"
+          data-status-url="{{ url_for('spotify_sync_status', job_id=sync_job.id) }}"
+          data-result-url="{{ url_for('spotify_integration', job=sync_job.id) }}"
+        >
+          <h2>Sync progress{% if progress.playlist_name %}: {{ progress.playlist_name }}{% endif %}</h2>
+          <p id="spotify-sync-status" role="status" aria-live="polite">
+            Preparing the Spotify playlist…
+          </p>
+          <progress
+            id="spotify-sync-bar"
+            max="{{ progress.track_total or 1 }}"
+            {% if progress.track_total %}value="{{ progress.completed_total }}"{% endif %}
+          ></progress>
+          <p id="spotify-sync-counts">
+            Processed {{ progress.completed_total }} of {{ progress.track_total or '?' }} tracks.
+            Available: {{ progress.available_total }}. Missing: {{ progress.missing_total }}.
+          </p>
+          <p><small>The music storage stays locked until the sync is finalized.</small></p>
+        </section>
+      {% else %}
+        <h2>Choose one playlist</h2>
+        {% if playlists %}
+          <form action="{{ url_for('spotify_sync_playlist') }}" method="post">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+            <label for="playlist_id">Spotify playlist:</label>
+            <select id="playlist_id" name="playlist_id" required>
+              {% for playlist in playlists %}
+                <option value="{{ playlist.id }}">{{ playlist.name }} — {{ playlist.owner }} ({{ playlist.track_total }} tracks)</option>
+              {% endfor %}
+            </select>
+            <button type="submit"{% if not storage_available %} disabled aria-disabled="true" title="Connect music storage to sync"{% endif %}>Sync playlist now</button>
+          </form>
+        {% else %}
+          <p>No accessible Spotify playlists were returned for this account.</p>
+        {% endif %}
+      {% endif %}
+
+      <form action="{{ url_for('spotify_disconnect') }}" method="post">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button type="submit"{% if sync_active %} disabled aria-disabled="true"{% endif %}>Disconnect Spotify</button>
+      </form>
+    {% endif %}
+
+    {% if report %}
+      <h2>Sync result: {{ report.playlist_name }}</h2>
+      <p>{{ report.available_total }} of {{ report.track_total }} tracks are available in <code>{{ report.directory }}</code>. Missing: {{ report.missing_total }}.</p>
+      {% if report.missing_tracks %}
+        <h3>Missing tracks</h3>
+        <table>
+          <thead><tr><th>#</th><th>Track</th><th>Reason</th><th>Agent search</th></tr></thead>
+          <tbody>
+            {% for track in report.missing_tracks %}
+              <tr>
+                <td>{{ track.position }}</td>
+                <td>{{ track.artists|join(', ') }} — {{ track.title }}</td>
+                <td>{{ track.reason }}</td>
+                <td><code>nineties agent track-search {{ track.suggested_query|tojson }}</code></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p>An AI agent can inspect candidates and retry with <code>nineties agent spotify sync PLAYLIST_ID --match SPOTIFY_TRACK_ID=YOUTUBE_URL</code>.</p>
+      {% endif %}
+    {% endif %}
+
+    {% if syncs %}
+      <h2>Previous syncs</h2>
+      <ul>
+        {% for sync in syncs %}
+          <li>{{ sync.playlist_name }}: {{ sync.status }}, {{ sync.available_total }}/{{ sync.track_total }} available ({{ sync.synced_at }})</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <p><small>Spotify and the Spotify logo are trademarks of Spotify AB. Nineties is an independent application and is not affiliated with Spotify.</small></p>
+    {% if sync_active %}
+      <script src="{{ url_for('static', filename='spotify-sync.js') }}"></script>
+    {% endif %}
+  </body>
+</html>

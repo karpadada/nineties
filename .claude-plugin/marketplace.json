@@ -3,6 +3,9 @@
   "owner": {
     "name": "Nineties contributors"
   },
+  "metadata": {
+    "description": "Search YouTube Music and sync Spotify playlists with Nineties."
+  },
   "plugins": [
     {
       "name": "nineties",
@@ -10,7 +13,7 @@
         "source": "github",
         "repo": "karpadada/nineties"
       },
-      "description": "Search YouTube Music and manage authorized album and playlist downloads.",
+      "description": "Search YouTube Music and sync authorized Spotify playlists to a Nineties music device.",
       "category": "Productivity"
     }
   ]

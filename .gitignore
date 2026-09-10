@@ -1,5 +1,6 @@
 .venv/
 .state/
+.private-state/
 downloads/
 .pytest_cache/
 __pycache__/

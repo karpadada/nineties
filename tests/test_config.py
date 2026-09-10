@@ -109,3 +109,26 @@ def test_web_server_is_bound_to_loopback(tmp_path: Path) -> None:
     )
 
     assert config.host == "127.0.0.1"
+
+
+def test_spotify_configuration_keeps_credentials_off_the_player(tmp_path: Path) -> None:
+    volume_root = tmp_path / "Volumes"
+    player = volume_root / "Music"
+    player.mkdir(parents=True)
+    app_data = tmp_path / "app-data"
+
+    config = AppConfig.from_environment(
+        project_root=tmp_path / "project",
+        environment={
+            "MUSIC_VOLUME_ROOT": str(volume_root),
+            "MUSIC_LOCAL_DATA_DIR": str(app_data),
+            "MUSIC_SPOTIFY_CLIENT_ID": "public-client-id",
+            "MUSIC_SPOTIFY_SUPPORT_CONTACT": "developer@example.com",
+        },
+    )
+
+    assert config.state_dir == (player / ".nineties-music").resolve()
+    assert config.private_state_dir == (app_data / ".private-state").resolve()
+    assert config.spotify_client_id == "public-client-id"
+    assert config.spotify_support_contact == "developer@example.com"
+    assert config.spotify_redirect_uri == "http://127.0.0.1:4310/spotify/callback"

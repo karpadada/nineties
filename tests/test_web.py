@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from nineties_music.config import AppConfig
 from nineties_music.discovery import DiscoveryError
@@ -120,6 +122,34 @@ def test_discovery_enforces_result_limit() -> None:
     ]
 
 
+def test_discovery_track_search_returns_agent_match_metadata() -> None:
+    from nineties_music.discovery import MusicDiscovery
+
+    class Client:
+        def search(self, query: str, filter: str, limit: int):
+            assert filter == "songs"
+            return [
+                {
+                    "videoId": "video-id",
+                    "title": "Fictional Track",
+                    "artists": [{"name": "Fictional Artist - Topic"}],
+                    "album": {"name": "Fictional Album"},
+                    "duration": "3:30",
+                    "duration_seconds": 210,
+                }
+            ]
+
+    discovery = MusicDiscovery()
+    discovery._client = Client()
+
+    result = discovery.search_tracks("Fictional Artist - Fictional Track")[0]
+
+    assert result["kind"] == "track"
+    assert result["creator"] == "Fictional Artist"
+    assert result["duration_seconds"] == 210
+    assert result["url"] == "https://music.youtube.com/watch?v=video-id"
+
+
 def test_discovery_updates_and_retries_after_search_failure() -> None:
     from nineties_music.discovery import MusicDiscovery
 
@@ -226,6 +256,267 @@ def test_home_has_agent_setup_instructions(tmp_path: Path) -> None:
     assert b"nineties plugins install claude" in response.data
     assert b"nineties plugins install pi" in response.data
     assert b"MCP" not in response.data
+
+
+class FakeSpotifyIntegration:
+    configured = True
+
+    def __init__(self, *, connected: bool) -> None:
+        self.connected = connected
+        self.disconnected = False
+
+    def begin_authorization(self) -> str:
+        return "https://accounts.spotify.com/authorize?test=1"
+
+    def finish_authorization(self, code: str, state: str) -> None:
+        assert code == "code"
+        assert state == "state"
+        self.connected = True
+
+    def disconnect(self) -> None:
+        self.connected = False
+        self.disconnected = True
+
+    def profile(self):
+        return {
+            "id": "user-id",
+            "display_name": "Test Listener",
+            "url": "https://open.spotify.com/user/user-id",
+            "image_url": "",
+        }
+
+    def playlists(self):
+        return [
+            {
+                "id": "1234567890ABCDEFGHIJKL",
+                "name": "Road Trip",
+                "owner": "Test Listener",
+                "track_total": 2,
+                "url": "https://open.spotify.com/playlist/1234567890ABCDEFGHIJKL",
+            }
+        ]
+
+
+class FakeSpotifySync:
+    active = False
+
+    def __init__(self) -> None:
+        self.playlist_ids = []
+        self.reports = []
+        self.block = False
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.finished = threading.Event()
+
+    def syncs(self):
+        return self.reports
+
+    @staticmethod
+    def reconciled(report):
+        return report
+
+    def sync(self, playlist_id: str, *, progress=None):
+        self.active = True
+        self.playlist_ids.append(playlist_id)
+        if progress:
+            progress(
+                {
+                    "phase": "downloading",
+                    "playlist_name": "Road Trip",
+                    "completed_total": 1,
+                    "track_total": 2,
+                    "available_total": 1,
+                    "missing_total": 0,
+                    "current_position": 2,
+                    "current_title": "Missing Song",
+                }
+            )
+        self.started.set()
+        if self.block:
+            self.release.wait(3)
+        try:
+            return {
+                "playlist_id": playlist_id,
+                "playlist_name": "Road Trip",
+                "directory": "Playlists/Road Trip [spotify-id]",
+                "status": "partial",
+                "track_total": 2,
+                "available_total": 1,
+                "missing_total": 1,
+                "missing_tracks": [
+                    {
+                        "position": 2,
+                        "spotify_track_id": "missing-track-id",
+                        "title": "Missing Song",
+                        "artists": ["Test Artist"],
+                        "reason": "No confident YouTube Music match was found.",
+                        "suggested_query": "Test Artist - Missing Song",
+                    }
+                ],
+            }
+        finally:
+            self.active = False
+            self.finished.set()
+
+
+def make_spotify_app(tmp_path: Path, *, connected: bool):
+    config = AppConfig(
+        project_root=tmp_path,
+        library_dir=tmp_path / "music",
+        state_dir=tmp_path / "state",
+        spotify_client_id="public-client-id",
+        spotify_support_contact="developer@example.com",
+    )
+    store = LibraryStore(config.state_dir, config.library_dir)
+    manager = DownloadManager(
+        store, FakeDownloader(), start_worker=False  # type: ignore[arg-type]
+    )
+    spotify = FakeSpotifyIntegration(connected=connected)
+    sync = FakeSpotifySync()
+    app = create_app(
+        config,
+        discovery=FakeDiscovery(),  # type: ignore[arg-type]
+        manager=manager,
+        store=store,
+        spotify=spotify,  # type: ignore[arg-type]
+        spotify_sync=sync,  # type: ignore[arg-type]
+        start_worker=False,
+    )
+    app.testing = True
+    return app, spotify, sync
+
+
+def test_spotify_page_explains_allowlisting_and_starts_connection(tmp_path: Path) -> None:
+    app, _, _ = make_spotify_app(tmp_path, connected=False)
+    client = app.test_client()
+
+    page = client.get("/spotify")
+
+    assert page.status_code == 200
+    assert b"exact email address" in page.data
+    assert b"Never send your Spotify password" in page.data
+    assert b"developer@example.com" in page.data
+
+    response = client.post("/spotify/connect", data=csrf_form(app))
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith("https://accounts.spotify.com/")
+
+
+def spotify_job_id(response) -> str:
+    return parse_qs(urlparse(response.headers["Location"]).query)["job"][0]
+
+
+def test_spotify_page_lists_and_syncs_selected_playlist(tmp_path: Path) -> None:
+    app, spotify, sync = make_spotify_app(tmp_path, connected=True)
+    client = app.test_client()
+
+    page = client.get("/spotify")
+    assert b"Road Trip" in page.data
+    assert b"Spotify is the source of truth" in page.data
+
+    response = client.post(
+        "/spotify/sync",
+        data=csrf_form(app, playlist_id="1234567890ABCDEFGHIJKL"),
+    )
+
+    assert response.status_code == 303
+    assert sync.finished.wait(2)
+    assert sync.playlist_ids == ["1234567890ABCDEFGHIJKL"]
+    job_id = spotify_job_id(response)
+    status = client.get(f"/api/spotify/syncs/{job_id}")
+    assert status.status_code == 200
+    assert status.get_json()["terminal"] is True
+    assert status.get_json()["status"] == "partial"
+    assert status.headers["Cache-Control"] == "no-store"
+
+    result = client.get(response.headers["Location"])
+    assert b"Missing Song" in result.data
+    assert b"nineties agent track-search" in result.data
+
+    disconnected = client.post("/spotify/disconnect", data=csrf_form(app))
+    assert disconnected.status_code == 302
+    assert spotify.disconnected is True
+
+
+def test_home_page_lists_spotify_files_from_the_active_player(tmp_path: Path) -> None:
+    app, _, sync = make_spotify_app(tmp_path, connected=True)
+    sync.reports = [
+        {
+            "playlist_name": "Road Trip",
+            "directory": "Playlists/Road Trip",
+            "status": "complete",
+            "track_total": 1,
+            "available_total": 1,
+            "disk_total": 1,
+            "integrity": "complete",
+            "files": ["01 - First Song.mp3"],
+        }
+    ]
+
+    page = app.test_client().get("/")
+
+    assert page.status_code == 200
+    assert b"Spotify-synced playlists" in page.data
+    assert b"Road Trip" in page.data
+    assert b"Playlists/Road Trip" in page.data
+    assert b"01 - First Song.mp3" in page.data
+    assert b"The managed library is empty" not in page.data
+
+
+def test_spotify_sync_page_polls_live_progress_and_blocks_device_changes(
+    tmp_path: Path,
+) -> None:
+    app, spotify, sync = make_spotify_app(tmp_path, connected=True)
+    sync.block = True
+    client = app.test_client()
+
+    response = client.post(
+        "/spotify/sync",
+        data=csrf_form(app, playlist_id="1234567890ABCDEFGHIJKL"),
+    )
+    assert response.status_code == 303
+    assert sync.started.wait(2)
+    job_id = spotify_job_id(response)
+
+    try:
+        page = client.get(response.headers["Location"])
+        assert b'id="spotify-sync-progress"' in page.data
+        assert b"spotify-sync.js" in page.data
+        assert b"Processed 1 of 2 tracks" in page.data
+        assert b"Disconnect Spotify</button>" in page.data
+        assert b'disabled aria-disabled="true"' in page.data
+
+        status = client.get(f"/api/spotify/syncs/{job_id}").get_json()
+        assert status["terminal"] is False
+        assert status["progress"]["phase"] == "downloading"
+        assert status["progress"]["current_title"] == "Missing Song"
+
+        duplicate = client.post(
+            "/spotify/sync",
+            data=csrf_form(app, playlist_id="1234567890ABCDEFGHIJKL"),
+        )
+        assert duplicate.status_code == 409
+        disconnected = client.post("/spotify/disconnect", data=csrf_form(app))
+        assert disconnected.status_code == 409
+        assert spotify.disconnected is False
+    finally:
+        sync.release.set()
+
+    assert sync.finished.wait(2)
+    terminal = client.get(f"/api/spotify/syncs/{job_id}").get_json()
+    assert terminal["terminal"] is True
+    assert terminal["status"] == "partial"
+
+
+def test_spotify_progress_script_polls_and_reloads_the_report(tmp_path: Path) -> None:
+    app, _, _ = make_spotify_app(tmp_path, connected=True)
+
+    response = app.test_client().get("/static/spotify-sync.js")
+
+    assert response.status_code == 200
+    assert b"container.dataset.statusUrl" in response.data
+    assert b"progress.current_title" in response.data
+    assert b"window.location.reload()" in response.data
 
 
 def test_artwork_proxy_uses_same_origin_cacheable_response(

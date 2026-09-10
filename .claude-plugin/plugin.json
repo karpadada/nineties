@@ -1,7 +1,7 @@
 {
   "name": "nineties",
-  "version": "0.7.1",
-  "description": "Search YouTube Music and manage authorized album and playlist downloads with Nineties.",
+  "version": "0.8.0",
+  "description": "Search YouTube Music and sync authorized Spotify playlists to a Nineties music device.",
   "author": {
     "name": "Nineties contributors",
     "url": "https://github.com/karpadada"
@@ -12,6 +12,7 @@
   "keywords": [
     "music",
     "youtube-music",
+    "spotify",
     "mp3"
   ]
 }

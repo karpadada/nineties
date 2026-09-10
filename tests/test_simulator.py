@@ -129,6 +129,29 @@ def test_both_disconnect_controls_refuse_active_operations(tmp_path, status):
         assert services.simulator.connected
 
 
+def test_both_disconnect_controls_refuse_active_spotify_sync(tmp_path):
+    services = make_services(tmp_path)
+
+    class ActiveSpotifySync:
+        active = True
+
+        @staticmethod
+        def syncs():
+            return []
+
+    app = create_app(
+        services.config,
+        manager=services.downloads,
+        spotify_sync=ActiveSpotifySync(),  # type: ignore[arg-type]
+        start_worker=False,
+    )
+    for path in ("/storage/simulator/disconnect", "/storage/safely-remove"):
+        response = post(app.test_client(), app, path)
+        assert response.status_code == 409
+        assert b"Spotify playlist sync" in response.data
+        assert services.simulator.connected
+
+
 def test_disconnected_simulator_blocks_mutations_without_touching_library(tmp_path):
     services = make_services(tmp_path)
     collection = services.downloads.enqueue(SOURCE)

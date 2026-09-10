@@ -27,6 +27,12 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=8)
 
+    track_search = commands.add_parser(
+        "track-search", help="search YouTube Music for individual track matches"
+    )
+    track_search.add_argument("query")
+    track_search.add_argument("--limit", type=int, default=5)
+
     download = commands.add_parser("download", help="download one collection and wait")
     download.add_argument("source_url")
     download.add_argument("--kind", choices=("album", "playlist"))
@@ -41,6 +47,24 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "safely-remove",
         help="eject the connected Music device after downloads finish",
+    )
+
+    spotify = commands.add_parser(
+        "spotify", help="connect and sync Spotify playlists"
+    )
+    spotify_commands = spotify.add_subparsers(dest="spotify_command", required=True)
+    spotify_commands.add_parser("status", help="inspect Spotify connection status")
+    spotify_commands.add_parser("playlists", help="list available Spotify playlists")
+    spotify_sync = spotify_commands.add_parser(
+        "sync", help="mirror one Spotify playlist to the music device"
+    )
+    spotify_sync.add_argument("playlist_id")
+    spotify_sync.add_argument(
+        "--match",
+        action="append",
+        default=[],
+        metavar="SPOTIFY_TRACK_ID=YOUTUBE_URL",
+        help="override a missing or incorrect automatic track match",
     )
 
     return parser
@@ -62,6 +86,8 @@ def run_agent_cli(config: AppConfig, argv: Sequence[str]) -> int:
         api = MusicAgentAPI(services)
         if arguments.command == "search":
             result = api.search(arguments.query, arguments.limit)
+        elif arguments.command == "track-search":
+            result = api.track_search(arguments.query, arguments.limit)
         elif arguments.command == "download":
             queued = api.download(arguments.source_url, arguments.kind)["collection"]
             completed = services.downloads.wait(queued["id"])
@@ -70,14 +96,34 @@ def run_agent_cli(config: AppConfig, argv: Sequence[str]) -> int:
             result = api.status(arguments.job_id)
         elif arguments.command == "library":
             result = api.library(arguments.query, arguments.limit)
-        else:
+        elif arguments.command == "safely-remove":
             result = api.safely_remove()
+        elif arguments.spotify_command == "status":
+            result = api.spotify_status()
+        elif arguments.spotify_command == "playlists":
+            result = api.spotify_playlists()
+        else:
+            result = api.spotify_sync(
+                arguments.playlist_id, _parse_matches(arguments.match)
+            )
     except (DownloadError, ManifestError, OSError, sqlite3.Error, ValueError) as exc:
         _write({"error": str(exc)}, error=True)
         return 2
 
     _write(result)
     return 0
+
+
+def _parse_matches(values: list[str]) -> dict[str, str]:
+    matches: dict[str, str] = {}
+    for value in values:
+        track_id, separator, url = value.partition("=")
+        if not separator or not track_id.strip() or not url.strip():
+            raise ValueError(
+                "Each --match must be SPOTIFY_TRACK_ID=YOUTUBE_URL."
+            )
+        matches[track_id.strip()] = url.strip()
+    return matches
 
 
 def run_simulator_cli(argv: Sequence[str]) -> int:

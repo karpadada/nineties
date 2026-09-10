@@ -29,9 +29,11 @@ It can:
 
 - search YouTube Music for albums and playlists, with cover art;
 - download MP3 collections with progress, retry, and removal controls;
+- connect a Spotify account and mirror one playlist, using Spotify as the source
+  of truth while reporting tracks that cannot be matched;
 - keep a transactional library database alongside a supported removable music card; and
-- expose search, download, status, library, and safe-device-removal operations
-  to AI agents through on-demand plugins.
+- expose search, download, status, library, Spotify sync, and safe-device-removal
+  operations to AI agents through on-demand plugins.
 
 > Only download media you are entitled to download. YouTube and YouTube Music
 > may change independently of this project, and their terms still apply.
@@ -162,6 +164,73 @@ simulator tests use isolated temporary directories and fixture downloads, so
 `uv run --locked pytest tests/test_simulator.py` needs no player or YouTube access
 once the locked development dependencies are installed.
 
+## Spotify playlist sync
+
+Create an app in the Spotify Developer Dashboard and register this redirect URI
+exactly (adjust the port only if `MUSIC_PORT` changes):
+
+```text
+http://127.0.0.1:4310/spotify/callback
+```
+
+Run Nineties with the app's public client ID and, optionally, the address where
+testers should send allowlist details:
+
+```sh
+MUSIC_SPOTIFY_CLIENT_ID="your-client-id" \
+MUSIC_SPOTIFY_SUPPORT_CONTACT="you@example.com" \
+nineties simulator
+```
+
+Nineties uses authorization-code PKCE, so no Spotify client secret is installed
+or requested. The public client ID is retained in local app data so the web UI
+and one-shot agent commands use the same app configuration. During Spotify
+development mode, the app owner must have Spotify Premium and can authorize up
+to five users. Add each tester in the app's **Users and Access** page. The tester
+should send you their Spotify account display name and the exact email address
+attached to the account—never their password. For the initial development-mode
+test, choose a playlist the connected user owns or collaborates on.
+
+Development mode is for the small allowlisted test group. Before opening the
+integration to unlisted users, the Spotify app owner must meet Spotify's current
+production-access requirements and request the appropriate extended access in
+the Developer Dashboard.
+
+Spotify's playlist API policy also says integrations may not facilitate
+downloads or stream ripping and may not feed Spotify Content into an AI model.
+Treat this implementation as a local prototype for media you are authorized to
+copy, not as approval to publish the Spotify-to-download or AI-assisted matching
+workflow. Get Spotify's written approval or redesign the public feature so it
+does not use Spotify metadata to drive downloads or AI prompts before release.
+
+Open <http://127.0.0.1:4310/spotify>, connect the account, select a playlist,
+and sync it. The page shows the current matching, reuse, or download phase,
+the active track, and processed/available/missing counts while the work runs in
+the background. The integration owns only its dedicated short `Playlists/Name`
+directory. If another managed playlist already uses that name, Nineties adds a
+short numeric suffix such as ` (2)` instead of an opaque ID. Track names use
+`NN - Title.mp3`, capped at 64 characters. A later sync reorders the
+files and removes tracks that Spotify removed from that playlist. Unmatched
+tracks appear in the UI and JSON result without silently substituting a
+low-confidence recording.
+
+Agent commands use the same connection and storage selection:
+
+```sh
+nineties agent --simulator spotify status
+nineties agent --simulator spotify playlists
+nineties agent --simulator spotify sync PLAYLIST_ID
+nineties agent --simulator track-search "artist - missing track" --limit 5
+nineties agent --simulator spotify sync PLAYLIST_ID \
+  --match SPOTIFY_TRACK_ID=https://music.youtube.com/watch?v=VIDEO_ID
+```
+
+The `--match` form is the CLI override path: an agent or user maps one exact
+Spotify track ID to a verified YouTube URL when automatic matching is not
+confident enough. It does not alter Spotify. Nineties downloads that candidate
+into the managed playlist, records the match in the local sync manifest, and
+reuses the file on later syncs while the Spotify track remains in the playlist.
+
 ## Use with an AI agent
 
 The repository is a plugin marketplace and an Agent Skills package. The
@@ -195,7 +264,8 @@ nineties plugins install pi
 
 Start a new agent session after installation. Ask it something like: “Use
 Nineties to search for *Fictional Album* by *Fictional Artist*,” or “Use
-Nineties to safely remove my music device.” When invoking
+Nineties to list my Spotify playlists,” or “Use Nineties to safely remove my
+music device.” When invoking
 the skill explicitly, use `$nineties` in Codex, `/nineties:nineties` in Claude
 Code, or `/skill:nineties` in Pi.
 
@@ -239,6 +309,9 @@ The Homebrew launcher and app accept these environment variables:
 | `MUSIC_PORT` | `4310` | Web server port |
 | `MUSIC_LOCAL_DATA_DIR` | Project directory locally; app data directory when installed | Fallback music and state root |
 | `MUSIC_APP_DATA_DIR` | `$XDG_DATA_HOME/nineties-music`, or `~/.local/share/nineties-music` | Writable runtime and local-data root |
+| `MUSIC_CREDENTIALS_DIR` | Local-data `.private-state` | Private OAuth token directory; never defaults to the removable player |
+| `MUSIC_SPOTIFY_CLIENT_ID` | unset | Public client ID for the Spotify app |
+| `MUSIC_SPOTIFY_SUPPORT_CONTACT` | unset | Contact shown to development-mode testers for allowlisting |
 | `MUSIC_REQUIRE_PLAYER_VOLUME` | Enabled by the installed web launcher | Disable web downloads unless the player was mounted at startup |
 | `MUSIC_STORAGE_MODE` | `auto` | Select automatic player discovery, `local`, or `simulator` storage |
 | `MUSIC_SIMULATOR_DIR` | Local-data `simulator` | Persistent virtual player root; used in simulator mode |
@@ -280,6 +353,8 @@ its features:
 - search queries are sent to YouTube Music through `ytmusicapi`, which returns
   collection information;
 - downloads are requested from YouTube through `yt-dlp`;
+- connected playlist metadata is read from Spotify; OAuth tokens stay in the
+  local private-state directory and are not written to the removable player;
 - cover art is fetched from allowlisted YouTube and Google image hosts;
 - the launcher contacts package registries when the web API starts, on the first
   skill call in an agent session, and after a YouTube compatibility failure; and
@@ -326,18 +401,18 @@ To prepare a release, set one semantic version across the application, Homebrew
 formula, and both plugin manifests, run the checks above, commit, tag, and push:
 
 ```sh
-python3 scripts/set_version.py 0.4.0
-git tag v0.4.0
+python3 scripts/set_version.py 0.8.0
+git tag v0.8.0
 ```
 
 ## Disclaimer
 
 Nineties is an independent project and is not affiliated with, endorsed by, or
-sponsored by YouTube, YouTube Music, or Google. It is provided as-is, without
-warranty. You are responsible for complying with applicable laws, service
-terms, and copyright restrictions, and for downloading only media you are
-authorized to use. Back up important files before allowing the application to
-manage a music library or removable device.
+sponsored by Spotify, YouTube, YouTube Music, or Google. It is provided as-is,
+without warranty. You are responsible for complying with applicable laws,
+service terms, and copyright restrictions, and for downloading only media you
+are authorized to use. Back up important files before allowing the application
+to manage a music library or removable device.
 
 ## License
 

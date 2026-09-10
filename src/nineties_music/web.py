@@ -4,6 +4,7 @@ import os
 import secrets
 import sqlite3
 import threading
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,8 @@ from .downloader import (
     remove_collection,
 )
 from .services import create_services
+from .spotify import SpotifyClient, SpotifyError, spotify_playlist_id
+from .spotify_sync import SpotifySyncEngine
 from .store import LibraryStore, ManifestError
 from .storage import StorageError, safely_remove_player
 
@@ -55,6 +58,118 @@ _MAX_QUERY_STRING_BYTES = 8 * 1024
 _MAX_SEARCH_QUERY_CHARS = 200
 _MAX_REQUEST_BYTES = 64 * 1024
 _TRUSTED_HOSTS = ["127.0.0.1", "localhost"]
+_SPOTIFY_SYNC_TERMINAL_STATUSES = {"complete", "partial", "failed"}
+
+
+class _SpotifySyncBusy(SpotifyError):
+    pass
+
+
+class _SpotifySyncJobs:
+    """Run one device-writing Spotify sync at a time and expose safe snapshots."""
+
+    def __init__(self, engine: SpotifySyncEngine) -> None:
+        self._engine = engine
+        self._lock = threading.Lock()
+        self._jobs: dict[str, dict[str, Any]] = {}
+
+    @property
+    def active(self) -> bool:
+        return self.active_job() is not None
+
+    def active_job(self) -> dict[str, Any] | None:
+        with self._lock:
+            for job in reversed(self._jobs.values()):
+                if job["status"] not in _SPOTIFY_SYNC_TERMINAL_STATUSES:
+                    return deepcopy(job)
+        return None
+
+    def get(self, job_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return deepcopy(job) if job else None
+
+    def start(self, playlist_id: str) -> dict[str, Any]:
+        with self._lock:
+            if any(
+                job["status"] not in _SPOTIFY_SYNC_TERMINAL_STATUSES
+                for job in self._jobs.values()
+            ):
+                raise _SpotifySyncBusy(
+                    "Wait for the current Spotify playlist sync to finish."
+                )
+            self._prune_locked()
+            job_id = secrets.token_urlsafe(18)
+            job = {
+                "id": job_id,
+                "playlist_id": playlist_id,
+                "status": "queued",
+                "progress": {
+                    "phase": "queued",
+                    "completed_total": 0,
+                    "track_total": 0,
+                    "available_total": 0,
+                    "missing_total": 0,
+                    "current_position": 0,
+                    "current_title": "",
+                },
+                "report": None,
+                "error": None,
+            }
+            self._jobs[job_id] = job
+        worker = threading.Thread(
+            target=self._run,
+            args=(job_id, playlist_id),
+            name=f"spotify-sync-{job_id[:8]}",
+            daemon=True,
+        )
+        try:
+            worker.start()
+        except RuntimeError as exc:
+            with self._lock:
+                self._jobs.pop(job_id, None)
+            raise SpotifyError("Could not start the Spotify playlist sync.") from exc
+        snapshot = self.get(job_id)
+        assert snapshot is not None
+        return snapshot
+
+    def _run(self, job_id: str, playlist_id: str) -> None:
+        self._update(job_id, status="running")
+
+        def report_progress(progress: dict[str, Any]) -> None:
+            self._update(job_id, progress=dict(progress))
+
+        try:
+            report = self._engine.sync(playlist_id, progress=report_progress)
+        except SpotifyError as exc:
+            self._update(job_id, status="failed", error=str(exc))
+        except Exception:
+            self._update(
+                job_id,
+                status="failed",
+                error="The Spotify playlist sync failed unexpectedly.",
+            )
+        else:
+            self._update(
+                job_id,
+                status=str(report.get("status") or "complete"),
+                report=report,
+            )
+
+    def _update(self, job_id: str, **values: Any) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None:
+                job.update(values)
+
+    def _prune_locked(self) -> None:
+        terminal_ids = [
+            job_id
+            for job_id, job in self._jobs.items()
+            if job["status"] in _SPOTIFY_SYNC_TERMINAL_STATUSES
+        ]
+        for job_id in terminal_ids[:-7]:
+            self._jobs.pop(job_id, None)
 
 
 def _validate_artwork_url(source_url: str) -> None:
@@ -116,6 +231,8 @@ def create_app(
     discovery: MusicDiscovery | None = None,
     manager: DownloadManager | None = None,
     store: LibraryStore | None = None,
+    spotify: SpotifyClient | None = None,
+    spotify_sync: SpotifySyncEngine | None = None,
     start_worker: bool = True,
 ) -> Flask:
     services = create_services(
@@ -123,6 +240,8 @@ def create_app(
         discovery=discovery,
         manager=manager,
         store=store,
+        spotify=spotify,
+        spotify_sync=spotify_sync,
         start_worker=start_worker,
     )
     config = services.config
@@ -142,10 +261,21 @@ def create_app(
     library_store = services.store
     music_discovery = services.discovery
     download_manager = services.downloads
+    spotify_client = services.spotify
+    sync_engine = services.spotify_sync
+    spotify_sync_jobs = _SpotifySyncJobs(sync_engine) if sync_engine else None
     app.extensions["library_store"] = library_store
     app.extensions["music_discovery"] = music_discovery
     app.extensions["download_manager"] = download_manager
+    app.extensions["spotify_client"] = spotify_client
+    app.extensions["spotify_sync"] = sync_engine
+    app.extensions["spotify_sync_jobs"] = spotify_sync_jobs
     storage_unavailable = threading.Event()
+
+    def spotify_sync_active() -> bool:
+        return bool(spotify_sync_jobs and spotify_sync_jobs.active) or bool(
+            sync_engine and sync_engine.active
+        )
 
     def player_storage_available() -> bool:
         if services.simulator:
@@ -207,15 +337,23 @@ def create_app(
                 else []
             )
             jobs = download_manager.jobs() if storage_available else []
+            spotify_syncs = (
+                [sync_engine.reconciled(item) for item in sync_engine.syncs()]
+                if sync_engine and storage_available
+                else []
+            )
         except (ManifestError, OSError):
             storage_unavailable.set()
             storage_available = False
             collections = []
             jobs = []
+            spotify_syncs = []
         return {
             "collections": collections,
             "jobs": jobs,
+            "spotify_syncs": spotify_syncs,
             "storage_busy": bool(jobs)
+            or spotify_sync_active()
             or any(item.get("status") == "deleting" for item in collections),
             "library_dir": str(config.library_dir),
             "player_volume": str(config.player_volume) if config.player_volume else None,
@@ -232,6 +370,184 @@ def create_app(
     @app.get("/")
     def index() -> str:
         return render_template("index.html", **page_context(results=None, query=""))
+
+    def spotify_page_context(**values: Any) -> dict[str, Any]:
+        configured = bool(spotify_client and spotify_client.configured)
+        connected = bool(spotify_client and spotify_client.connected)
+        storage_available = player_storage_available()
+        sync_job = values.get("sync_job")
+        sync_active = bool(
+            sync_job
+            and sync_job.get("status") not in _SPOTIFY_SYNC_TERMINAL_STATUSES
+        )
+        context: dict[str, Any] = {
+            "configured": configured,
+            "connected": connected,
+            "redirect_uri": config.spotify_redirect_uri,
+            "support_contact": config.spotify_support_contact,
+            "profile": None,
+            "playlists": [],
+            "syncs": (
+                sync_engine.syncs()
+                if sync_engine and storage_available
+                else []
+            ),
+            "storage_available": storage_available,
+            "simulator": services.simulator is not None,
+            "sync_job": sync_job,
+            "sync_active": sync_active,
+            **values,
+        }
+        if connected and spotify_client:
+            try:
+                context["profile"] = spotify_client.profile()
+                if not sync_active:
+                    context["playlists"] = spotify_client.playlists()
+            except SpotifyError as exc:
+                context.setdefault("error", str(exc))
+        return context
+
+    @app.get("/spotify")
+    def spotify_integration() -> str:
+        job_id = request.args.get("job", "").strip()
+        sync_job = (
+            spotify_sync_jobs.get(job_id)
+            if spotify_sync_jobs and job_id
+            else None
+        )
+        if sync_job is None and spotify_sync_jobs and not job_id:
+            sync_job = spotify_sync_jobs.active_job()
+        report = sync_job.get("report") if sync_job else None
+        error = sync_job.get("error") if sync_job else None
+        notice = None
+        if request.args.get("connected") == "1":
+            notice = "Spotify connected. Choose a playlist to sync."
+        elif sync_job and sync_job["status"] == "partial":
+            notice = "Playlist synced with missing tracks."
+        elif sync_job and sync_job["status"] == "complete":
+            notice = "Playlist sync completed."
+        elif job_id and sync_job is None:
+            error = "That Spotify sync job is no longer available."
+        return render_template(
+            "spotify.html",
+            **spotify_page_context(
+                notice=notice,
+                error=error,
+                report=report,
+                sync_job=sync_job,
+            ),
+        )
+
+    @app.post("/spotify/connect")
+    def spotify_connect() -> tuple[str, int] | Any:
+        if spotify_client is None:
+            abort(404)
+        try:
+            return redirect(spotify_client.begin_authorization())
+        except SpotifyError as exc:
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(error=str(exc), report=None),
+            ), 400
+
+    @app.get("/spotify/callback")
+    def spotify_callback() -> tuple[str, int] | Any:
+        if spotify_client is None:
+            abort(404)
+        authorization_error = request.args.get("error", "").strip()
+        if authorization_error:
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(
+                    error=f"Spotify connection was not completed: {authorization_error}",
+                    report=None,
+                ),
+            ), 400
+        try:
+            spotify_client.finish_authorization(
+                request.args.get("code", ""), request.args.get("state", "")
+            )
+        except SpotifyError as exc:
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(error=str(exc), report=None),
+            ), 400
+        return redirect(url_for("spotify_integration", connected="1"))
+
+    @app.post("/spotify/disconnect")
+    def spotify_disconnect() -> tuple[str, int] | Any:
+        if spotify_client is None:
+            abort(404)
+        if spotify_sync_active():
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(
+                    error=(
+                        "Wait for the Spotify playlist sync to finish before "
+                        "disconnecting."
+                    ),
+                    report=None,
+                    sync_job=(
+                        spotify_sync_jobs.active_job() if spotify_sync_jobs else None
+                    ),
+                ),
+            ), 409
+        spotify_client.disconnect()
+        return redirect(url_for("spotify_integration"))
+
+    @app.post("/spotify/sync")
+    def spotify_sync_playlist() -> tuple[str, int] | Any:
+        if sync_engine is None or spotify_sync_jobs is None:
+            abort(404)
+        if not player_storage_available():
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(
+                    error="Connect the music storage before syncing a playlist.",
+                    report=None,
+                ),
+            ), 503
+        try:
+            playlist_id = spotify_playlist_id(request.form.get("playlist_id", ""))
+            sync_job = spotify_sync_jobs.start(playlist_id)
+        except _SpotifySyncBusy as exc:
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(
+                    error=str(exc),
+                    report=None,
+                    sync_job=spotify_sync_jobs.active_job(),
+                ),
+            ), 409
+        except SpotifyError as exc:
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(error=str(exc), report=None),
+            ), 400
+        return redirect(
+            url_for("spotify_integration", job=sync_job["id"]), code=303
+        )
+
+    @app.get("/api/spotify/syncs/<job_id>")
+    def spotify_sync_status(job_id: str) -> Any:
+        if spotify_sync_jobs is None:
+            abort(404)
+        sync_job = spotify_sync_jobs.get(job_id)
+        if sync_job is None:
+            abort(404)
+        response = jsonify(
+            {
+                "id": sync_job["id"],
+                "playlist_id": sync_job["playlist_id"],
+                "status": sync_job["status"],
+                "progress": sync_job["progress"],
+                "error": sync_job["error"],
+                "terminal": sync_job["status"]
+                in _SPOTIFY_SYNC_TERMINAL_STATUSES,
+            }
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/search")
     def search() -> tuple[str, int] | str:
@@ -354,6 +670,15 @@ def create_app(
 
     @app.post("/storage/safely-remove")
     def safely_remove_storage() -> tuple[str, int] | str:
+        if spotify_sync_active():
+            return render_template(
+                "index.html",
+                **page_context(
+                    results=None,
+                    query="",
+                    error="Wait for the Spotify playlist sync to finish before safely removing storage.",
+                ),
+            ), 409
         storage_unavailable.set()
         try:
             result = safely_remove_player(config, download_manager)
@@ -372,6 +697,18 @@ def create_app(
     def control_simulator(action: str) -> Any:
         if services.simulator is None or action not in {"connect", "disconnect"}:
             abort(404)
+        if action == "disconnect" and spotify_sync_active():
+            return render_template(
+                "index.html",
+                **page_context(
+                    results=None,
+                    query="",
+                    error=(
+                        "Wait for the Spotify playlist sync to finish before "
+                        "disconnecting the virtual player."
+                    ),
+                ),
+            ), 409
         try:
             if action == "connect":
                 services.simulator.connect()

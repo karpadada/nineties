@@ -7,6 +7,8 @@ from .config import AppConfig
 from .discovery import MusicDiscovery
 from .downloader import DownloadManager, YtDlpDownloader
 from .simulator import VirtualPlayer
+from .spotify import SpotifyClient
+from .spotify_sync import SpotifySyncEngine
 from .store import LibraryStore
 from .updates import update_youtube_packages
 
@@ -18,6 +20,8 @@ class AppServices:
     discovery: MusicDiscovery
     downloads: DownloadManager
     simulator: VirtualPlayer | None = None
+    spotify: SpotifyClient | None = None
+    spotify_sync: SpotifySyncEngine | None = None
 
 
 def create_services(
@@ -26,6 +30,8 @@ def create_services(
     discovery: MusicDiscovery | None = None,
     manager: DownloadManager | None = None,
     store: LibraryStore | None = None,
+    spotify: SpotifyClient | None = None,
+    spotify_sync: SpotifySyncEngine | None = None,
     start_worker: bool = True,
     recover_interrupted: bool = True,
 ) -> AppServices:
@@ -53,10 +59,25 @@ def create_services(
     )
     if simulator:
         download_manager.storage_operation = simulator.operation
+    spotify_client = spotify or SpotifyClient(
+        config.spotify_client_id,
+        config.spotify_redirect_uri,
+        config.private_state_dir,
+    )
+    sync_engine = spotify_sync or SpotifySyncEngine(
+        config.library_dir,
+        config.state_dir,
+        spotify_client,
+        music_discovery,
+        download_manager.downloader,
+        storage_operation=simulator.operation if simulator else nullcontext,
+    )
     return AppServices(
         config=config,
         store=library_store,
         discovery=music_discovery,
         downloads=download_manager,
         simulator=simulator,
+        spotify=spotify_client,
+        spotify_sync=sync_engine,
     )

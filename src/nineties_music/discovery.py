@@ -117,6 +117,63 @@ class MusicDiscovery:
             )
         return results
 
+    def search_tracks(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        query = query.strip()
+        if not query:
+            return []
+        limit = max(1, min(limit, 12))
+        with self._client_lock:
+            try:
+                tracks = self.client.search(query, filter="songs", limit=limit)
+            except Exception as first_error:
+                if not self._compatibility_updater():
+                    raise DiscoveryError(
+                        f"YouTube Music track search failed: {first_error}"
+                    ) from first_error
+                self._discard_client()
+                try:
+                    tracks = self.client.search(query, filter="songs", limit=limit)
+                except Exception as retry_error:
+                    raise DiscoveryError(
+                        "YouTube Music track search failed after updating compatibility "
+                        f"packages: {retry_error}"
+                    ) from retry_error
+
+        results: list[dict[str, Any]] = []
+        for item in tracks[:limit]:
+            video_id = str(item.get("videoId") or "")
+            if not video_id:
+                continue
+            artists = item.get("artists") or []
+            artist_names = [
+                normalize_artist_name(str(artist.get("name") or ""))
+                for artist in artists
+                if isinstance(artist, dict) and artist.get("name")
+            ]
+            album = item.get("album") or {}
+            duration_seconds = item.get("duration_seconds") or 0
+            try:
+                parsed_duration = int(duration_seconds)
+            except (TypeError, ValueError):
+                parsed_duration = 0
+            results.append(
+                {
+                    "kind": "track",
+                    "title": str(item.get("title") or "Untitled track"),
+                    "creator": ", ".join(filter(None, artist_names))
+                    or "Unknown artist",
+                    "album": str(album.get("name") or "")
+                    if isinstance(album, dict)
+                    else "",
+                    "duration": str(item.get("duration") or ""),
+                    "duration_seconds": parsed_duration,
+                    "youtube_id": video_id,
+                    "url": "https://music.youtube.com/watch?"
+                    + urlencode({"v": video_id}),
+                }
+            )
+        return results
+
     def _search(
         self, query: str, limit: int
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

@@ -5,6 +5,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 from .discovery import DiscoveryError
 from .downloader import DownloadError
 from .services import AppServices
+from .spotify import SpotifyError
 from .storage import SafeRemoveResult, StorageError, safely_remove_player
 
 
@@ -60,6 +61,53 @@ class MusicAgentAPI:
         except DiscoveryError as exc:
             raise ValueError(str(exc)) from exc
         return {"results": [SearchResult(**item) for item in results]}
+
+    def track_search(self, query: str, limit: int = 5) -> dict[str, Any]:
+        query = query.strip()
+        if not query:
+            raise ValueError("Enter a track search term.")
+        try:
+            results = self.services.discovery.search_tracks(query, limit=limit)
+        except DiscoveryError as exc:
+            raise ValueError(str(exc)) from exc
+        return {"results": results}
+
+    def spotify_status(self) -> dict[str, Any]:
+        spotify = self._spotify()
+        result: dict[str, Any] = {
+            "configured": spotify.configured,
+            "connected": spotify.connected,
+            "integration_url": f"http://{self.services.config.host}:{self.services.config.port}/spotify",
+        }
+        if spotify.connected:
+            try:
+                result["account"] = spotify.profile()
+            except SpotifyError as exc:
+                result["connection_error"] = str(exc)
+        return result
+
+    def spotify_playlists(self) -> dict[str, Any]:
+        try:
+            return {"playlists": self._spotify().playlists()}
+        except SpotifyError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def spotify_sync(
+        self, playlist_id: str, overrides: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        engine = self.services.spotify_sync
+        if engine is None:
+            raise ValueError("Spotify sync is unavailable.")
+        try:
+            return {"sync": engine.sync(playlist_id, overrides=overrides)}
+        except SpotifyError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _spotify(self):
+        spotify = self.services.spotify
+        if spotify is None:
+            raise ValueError("Spotify integration is unavailable.")
+        return spotify
 
     def download(
         self,

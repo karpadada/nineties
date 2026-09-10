@@ -23,6 +23,20 @@ class FakeDiscovery:
             }
         ][:limit]
 
+    def search_tracks(self, query: str, limit: int = 5):
+        return [
+            {
+                "kind": "track",
+                "title": "Fictional Track",
+                "creator": "Fictional Artist",
+                "album": "Fictional Album",
+                "duration": "3:30",
+                "duration_seconds": 210,
+                "youtube_id": "video-id",
+                "url": "https://music.youtube.com/watch?v=video-id",
+            }
+        ][:limit]
+
 
 class FakeDownloader:
     def probe(
@@ -96,6 +110,15 @@ def test_agent_rejects_unknown_job(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="job ID"):
         api.status("missing")
+
+
+def test_agent_track_search_returns_individual_candidates(tmp_path: Path) -> None:
+    api, _, _ = make_api(tmp_path)
+
+    result = api.track_search("Fictional Artist - Fictional Track")
+
+    assert result["results"][0]["kind"] == "track"
+    assert result["results"][0]["youtube_id"] == "video-id"
 
 
 def test_agent_safely_removes_player(tmp_path: Path, monkeypatch) -> None:

@@ -1,4 +1,4 @@
 interface:
   display_name: "Nineties"
-  short_description: "Search and manage a local music library"
-  default_prompt: "Use $nineties to search for an album or playlist."
+  short_description: "Search, download, and sync Spotify playlists"
+  default_prompt: "Use $nineties to search for music or sync a connected Spotify playlist."

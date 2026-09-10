@@ -9,6 +9,7 @@
     <span id="storage-state" data-storage-url="{{ url_for('api_storage') }}" data-storage-available="{{ 'true' if storage_available else 'false' }}" hidden></span>
     <h1>90s Music Browser</h1>
     <p>Find an album or playlist and copy it to your MP3 music directory.</p>
+    <p><a href="{{ url_for('spotify_integration') }}">Connect Spotify and sync a playlist</a></p>
 
     {% if simulator %}
       <p><strong>Virtual player {{ 'connected' if storage_available else 'disconnected' }}.</strong> This player stores real music files on this computer.</p>
@@ -151,6 +152,7 @@
     <h2>Managed library</h2>
     <p>Music directory: <code>{{ library_dir }}</code></p>
     {% if collections %}
+      <h3>YouTube Music collections</h3>
       <table>
         <thead>
           <tr><th>Type</th><th>Collection</th><th>Status</th><th>Files</th><th>Disk</th><th>Action</th></tr>
@@ -168,7 +170,37 @@
           {% endfor %}
         </tbody>
       </table>
-    {% else %}
+    {% endif %}
+    {% if spotify_syncs %}
+      <h3>Spotify-synced playlists</h3>
+      <table>
+        <thead>
+          <tr><th>Playlist</th><th>Status</th><th>Files</th><th>Disk</th><th>Folder</th></tr>
+        </thead>
+        <tbody>
+          {% for sync in spotify_syncs %}
+            <tr>
+              <td>{{ sync.playlist_name }}</td>
+              <td>{{ sync.status }}</td>
+              <td>
+                {{ sync.disk_total }} / {{ sync.available_total }} available
+                {% if sync.files %}
+                  <details>
+                    <summary>Show files</summary>
+                    <ol>
+                      {% for file in sync.files %}<li><code>{{ file }}</code></li>{% endfor %}
+                    </ol>
+                  </details>
+                {% endif %}
+              </td>
+              <td>{{ sync.integrity }}</td>
+              <td><code>{{ sync.directory }}</code></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+    {% if not collections and not spotify_syncs %}
       <p>The managed library is empty.</p>
     {% endif %}
     {% endif %}
