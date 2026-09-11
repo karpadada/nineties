@@ -47,6 +47,30 @@ No separate Python, uv, `yt-dlp`, FFmpeg, or JavaScript runtime installation is
 required. The Homebrew formula provides the complete runtime toolchain,
 including Deno for `yt-dlp`'s YouTube JavaScript challenge handling.
 
+## Diagnose an installation
+
+Create a report for troubleshooting without changing or repairing the
+installation:
+
+```sh
+nineties doctor
+```
+
+The command writes a timestamped `nineties-doctor-*.txt` file in the current
+directory. Choose a different destination with `--output PATH`. If installation
+failed before the `nineties` command became available, run the standalone
+doctor directly:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/karpadada/nineties/main/doctor.sh | sh
+```
+
+The report includes system, Homebrew, tap, recent Homebrew installation-log,
+packaged-file, runtime, storage, database-integrity, local-server, and
+agent-plugin checks. It does not upload anything, and it omits OAuth tokens,
+Spotify identifiers, and music-library contents. Home-directory paths are
+shortened to `~`; review the file before sharing it with support.
+
 ## Manual installation
 
 Install Nineties directly from its GitHub-hosted Homebrew tap:

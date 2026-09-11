@@ -45,6 +45,137 @@ def test_homebrew_formula_has_main_branch_head() -> None:
         in formula
     )
     assert '(bin/"nineties").write_env_script' in formula
+    assert 'libexec.install "doctor.sh"' in formula
+
+
+def test_doctor_creates_private_redacted_report(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_prefix = tmp_path / "prefix"
+    (fake_prefix / "bin").mkdir(parents=True)
+    fake_brew = fake_bin / "brew"
+    fake_brew.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  '--prefix karpadada/nineties/nineties') printf '%s\\n' \"$FAKE_PREFIX\" ;;\n"
+        "  '--repository karpadada/nineties') exit 1 ;;\n"
+        "  'list --versions karpadada/nineties/nineties') printf '%s\\n' 'nineties 0.8.2' ;;\n"
+        "  'missing karpadada/nineties/nineties') exit 0 ;;\n"
+        "  '--version') printf '%s\\n' 'Homebrew 5.0.0' ;;\n"
+        "  'config') printf '%s\\n' \"HOME: $HOME\" \"HOMEBREW_PREFIX: $FAKE_PREFIX\" ;;\n"
+        "  'doctor') printf '%s\\n' 'Your system is ready to brew.' ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_brew.chmod(0o755)
+    fake_nineties = fake_bin / "nineties"
+    fake_nineties.write_text(
+        "#!/bin/sh\nprintf '%s\\n' 'nineties 0.8.2'\n", encoding="utf-8"
+    )
+    fake_nineties.chmod(0o755)
+    app_data = tmp_path / "app-data"
+    runtime = app_data / "runtime/0.8.2"
+    (runtime / ".venv/bin").mkdir(parents=True)
+    (runtime / ".ready").touch()
+    brew_logs = tmp_path / "brew-logs/nineties"
+    brew_logs.mkdir(parents=True)
+    (brew_logs / "01.install.log").write_text(
+        f"failed below {Path.home()} during installation\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "report.txt"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": os.pathsep.join(
+                (str(fake_bin), "/usr/bin", "/bin", "/usr/sbin", "/sbin")
+            ),
+            "FAKE_PREFIX": str(fake_prefix),
+            "HOMEBREW_LOGS": str(tmp_path / "brew-logs"),
+            "MUSIC_APP_DATA_DIR": str(app_data),
+            "MUSIC_SPOTIFY_CLIENT_ID": "secret-client-id",
+            "MUSIC_SPOTIFY_SUPPORT_CONTACT": "secret@example.test",
+            "NINETIES_PACKAGE_ROOT": str(ROOT),
+        }
+    )
+    environment.pop("SHELL", None)
+
+    result = subprocess.run(
+        [ROOT / "doctor.sh", "--output", report],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    contents = report.read_text(encoding="utf-8")
+    assert "Nineties doctor report" in contents
+    assert "Your system is ready to brew." in contents
+    assert "failed below ~ during installation" in contents
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert f"package version: {project['project']['version']}" in contents
+    assert "MUSIC_SPOTIFY_CLIENT_ID: set (value omitted)" in contents
+    assert "MUSIC_SPOTIFY_SUPPORT_CONTACT: set (value omitted)" in contents
+    assert "secret-client-id" not in contents
+    assert "secret@example.test" not in contents
+    assert str(Path.home()) not in contents
+    assert "HOME: ~" in contents
+    assert report.stat().st_mode & 0o777 == 0o600
+    assert str(report) in result.stdout
+
+
+def test_launcher_runs_doctor_without_configuring_runtime(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command_name in ("brew", "curl"):
+        fake_command = fake_bin / command_name
+        fake_command.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        fake_command.chmod(0o755)
+    report = tmp_path / "launcher-report.txt"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": os.pathsep.join(
+                (str(fake_bin), "/usr/bin", "/bin", "/usr/sbin", "/sbin")
+            ),
+            "NINETIES_PACKAGE_ROOT": str(ROOT),
+            "NINETIES_UV": str(tmp_path / "missing-uv"),
+            "NINETIES_PYTHON": str(tmp_path / "missing-python"),
+        }
+    )
+
+    subprocess.run(
+        [ROOT / "scripts/nineties", "doctor", "--output", report],
+        check=True,
+        env=environment,
+    )
+
+    assert report.exists()
+    assert "Nineties doctor report" in report.read_text(encoding="utf-8")
+
+
+def test_standalone_doctor_runs_when_piped_to_sh(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command_name in ("brew", "curl"):
+        fake_command = fake_bin / command_name
+        fake_command.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        fake_command.chmod(0o755)
+    report = tmp_path / "piped-report.txt"
+    environment = os.environ.copy()
+    environment["PATH"] = os.pathsep.join(
+        (str(fake_bin), "/usr/bin", "/bin", "/usr/sbin", "/sbin")
+    )
+
+    subprocess.run(
+        ["sh", "-s", "--", "--output", str(report)],
+        input=(ROOT / "doctor.sh").read_text(encoding="utf-8"),
+        check=True,
+        text=True,
+        env=environment,
+    )
+
+    assert "Nineties doctor report" in report.read_text(encoding="utf-8")
 
 
 def test_remote_runner_refreshes_tap_and_installs_head(tmp_path: Path) -> None:

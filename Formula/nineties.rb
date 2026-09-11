@@ -1,7 +1,7 @@
 class Nineties < Formula
   desc "Local YouTube Music browser and Spotify-to-MP3 playlist sync tool"
   homepage "https://github.com/karpadada/nineties"
-  url "https://github.com/karpadada/nineties.git", tag: "v0.8.1"
+  url "https://github.com/karpadada/nineties.git", tag: "v0.8.2"
   license "MIT"
   head "https://github.com/karpadada/nineties.git", branch: "main"
 
@@ -11,7 +11,7 @@ class Nineties < Formula
   depends_on "uv"
 
   def install
-    libexec.install "pyproject.toml", "uv.lock", "src"
+    libexec.install "doctor.sh", "pyproject.toml", "uv.lock", "src"
     libexec.install "scripts/nineties", "scripts/prune-runtime-versions"
 
     runtime_path = [
@@ -31,5 +31,7 @@ class Nineties < Formula
     project_version = (libexec/"pyproject.toml").read[/^version = "([^"]+)"/, 1]
     assert_equal "nineties #{project_version}\n", shell_output("#{bin}/nineties --version")
     assert_match "nineties plugins install", shell_output("#{bin}/nineties --help")
+    assert_predicate libexec/"doctor.sh", :executable?
+    assert_match "Create a private diagnostic report", shell_output("#{bin}/nineties doctor --help")
   end
 end

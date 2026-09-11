@@ -30,6 +30,7 @@ Usage:
   nineties web [--local | --simulator] [--simulator-dir PATH]
   nineties simulator [web|connect|disconnect|status|agent ...] [--directory PATH]
   nineties agent [--local | --simulator] <search|track-search|download|status|library|spotify|safely-remove> ...
+  nineties doctor [--output PATH]
   nineties update
   nineties plugins install [codex|claude|pi|all]
   nineties plugins update [codex|claude|pi|all]
@@ -419,6 +420,15 @@ case "${1:-web}" in
   simulator)
     shift
     run_application simulator "$@"
+    ;;
+  doctor)
+    shift
+    doctor_script="$package_root/doctor.sh"
+    if [[ ! -x "$doctor_script" ]]; then
+      echo "The Nineties doctor script is missing from this installation." >&2
+      exit 1
+    fi
+    exec "$doctor_script" "$@"
     ;;
   update)
     shift
