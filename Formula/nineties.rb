@@ -1,7 +1,7 @@
 class Nineties < Formula
   desc "Local YouTube Music browser and Spotify-to-MP3 playlist sync tool"
   homepage "https://github.com/karpadada/nineties"
-  url "https://github.com/karpadada/nineties.git", tag: "v0.8.0"
+  url "https://github.com/karpadada/nineties.git", tag: "v0.8.1"
   license "MIT"
   head "https://github.com/karpadada/nineties.git", branch: "main"
 

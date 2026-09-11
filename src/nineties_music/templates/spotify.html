@@ -40,10 +40,7 @@
         <p>Send those details to: <strong>{{ support_contact }}</strong></p>
       {% endif %}
       <p><strong>Never send your Spotify password.</strong> After the owner confirms access, use the button below.</p>
-      <form action="{{ url_for('spotify_connect') }}" method="post">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-        <button type="submit">Connect Spotify</button>
-      </form>
+      <p><a href="{{ url_for('spotify_connect') }}">Connect Spotify</a></p>
     {% else %}
       <h2>Connected account</h2>
       {% if profile %}

@@ -397,9 +397,11 @@ def test_spotify_page_explains_allowlisting_and_starts_connection(tmp_path: Path
     assert b"Never send your Spotify password" in page.data
     assert b"developer@example.com" in page.data
 
-    response = client.post("/spotify/connect", data=csrf_form(app))
+    response = client.get("/spotify/connect")
     assert response.status_code == 302
     assert response.headers["Location"].startswith("https://accounts.spotify.com/")
+    assert b'href="/spotify/connect"' in page.data
+    assert b'action="/spotify/connect"' not in page.data
 
 
 def spotify_job_id(response) -> str:

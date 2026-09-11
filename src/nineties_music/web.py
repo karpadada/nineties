@@ -438,7 +438,7 @@ def create_app(
             ),
         )
 
-    @app.post("/spotify/connect")
+    @app.get("/spotify/connect")
     def spotify_connect() -> tuple[str, int] | Any:
         if spotify_client is None:
             abort(404)
