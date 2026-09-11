@@ -23,12 +23,14 @@
     {% endif %}
 
     {% if not configured %}
-      <h2>Developer setup required</h2>
-      <p>Create a Spotify app and register this redirect URI exactly:</p>
-      <pre><code>{{ redirect_uri }}</code></pre>
-      <p>Then start Nineties with its public client ID:</p>
-      <pre><code>MUSIC_SPOTIFY_CLIENT_ID="your-client-id" nineties</code></pre>
-      <p>No client secret is installed because Nineties uses PKCE.</p>
+      <h2>Enter the supplied Spotify client ID</h2>
+      <p>Paste the client ID sent to you privately by the Nineties publisher. You do not need to create a Spotify app, and you should never enter a client secret or Spotify password here.</p>
+      <form action="{{ url_for('spotify_configure') }}" method="post">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <label for="spotify_client_id">Spotify client ID:</label>
+        <input id="spotify_client_id" name="client_id" type="text" required minlength="16" maxlength="64" pattern="[A-Za-z0-9]+" autocomplete="off" autocapitalize="none" spellcheck="false">
+        <button type="submit">Save client ID</button>
+      </form>
     {% elif not connected %}
       <h2>Before connecting during development</h2>
       <p>Development mode supports up to five authorized users and requires the app owner to have Spotify Premium. The owner must add your account under <strong>Users Management / Users and Access</strong>. Send the owner:</p>
@@ -41,6 +43,16 @@
       {% endif %}
       <p><strong>Never send your Spotify password.</strong> After the owner confirms access, use the button below.</p>
       <p><a href="{{ url_for('spotify_connect') }}">Connect Spotify</a></p>
+      <details>
+        <summary>Replace the supplied client ID</summary>
+        <p>Replacing it disconnects any account authorized through the previous Spotify app.</p>
+        <form action="{{ url_for('spotify_configure') }}" method="post">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <label for="replacement_spotify_client_id">New Spotify client ID:</label>
+          <input id="replacement_spotify_client_id" name="client_id" type="text" required minlength="16" maxlength="64" pattern="[A-Za-z0-9]+" autocomplete="off" autocapitalize="none" spellcheck="false">
+          <button type="submit">Replace client ID</button>
+        </form>
+      </details>
     {% else %}
       <h2>Connected account</h2>
       {% if profile %}

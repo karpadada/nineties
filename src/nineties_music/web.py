@@ -422,6 +422,8 @@ def create_app(
         notice = None
         if request.args.get("connected") == "1":
             notice = "Spotify connected. Choose a playlist to sync."
+        elif request.args.get("configured") == "1":
+            notice = "Spotify app saved on this computer. Connect Spotify to continue."
         elif sync_job and sync_job["status"] == "partial":
             notice = "Playlist synced with missing tracks."
         elif sync_job and sync_job["status"] == "complete":
@@ -437,6 +439,33 @@ def create_app(
                 sync_job=sync_job,
             ),
         )
+
+    @app.post("/spotify/configure")
+    def spotify_configure() -> tuple[str, int] | Any:
+        if spotify_client is None:
+            abort(404)
+        if spotify_sync_active():
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(
+                    error=(
+                        "Wait for the Spotify playlist sync to finish before "
+                        "replacing the client ID."
+                    ),
+                    report=None,
+                    sync_job=(
+                        spotify_sync_jobs.active_job() if spotify_sync_jobs else None
+                    ),
+                ),
+            ), 409
+        try:
+            spotify_client.configure(request.form.get("client_id", ""))
+        except SpotifyError as exc:
+            return render_template(
+                "spotify.html",
+                **spotify_page_context(error=str(exc), report=None),
+            ), 400
+        return redirect(url_for("spotify_integration", configured="1"), code=303)
 
     @app.get("/spotify/connect")
     def spotify_connect() -> tuple[str, int] | Any:

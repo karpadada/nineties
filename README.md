@@ -190,14 +190,23 @@ once the locked development dependencies are installed.
 
 ## Spotify playlist sync
 
-Create an app in the Spotify Developer Dashboard and register this redirect URI
-exactly (adjust the port only if `MUSIC_PORT` changes):
+The published Nineties package does not contain a Spotify client ID. The app
+publisher should send the public client ID privately to each tester. Users open
+<http://127.0.0.1:4310/spotify>, paste that value into the local form, send the
+publisher the allowlist details shown there when required, and select
+**Connect Spotify** after access is confirmed. Users do not create a Spotify
+developer app and must never receive or enter its client secret.
+
+Maintainers of a fork can register their own app in the Spotify Developer
+Dashboard and override the published public client ID with
+`MUSIC_SPOTIFY_CLIENT_ID`. Register this redirect URI exactly (adjust the port
+only if `MUSIC_PORT` changes):
 
 ```text
 http://127.0.0.1:4310/spotify/callback
 ```
 
-Run Nineties with the app's public client ID and, optionally, the address where
+Run Nineties with the fork's public client ID and, optionally, the address where
 testers should send allowlist details:
 
 ```sh
@@ -334,7 +343,7 @@ The Homebrew launcher and app accept these environment variables:
 | `MUSIC_LOCAL_DATA_DIR` | Project directory locally; app data directory when installed | Fallback music and state root |
 | `MUSIC_APP_DATA_DIR` | `$XDG_DATA_HOME/nineties-music`, or `~/.local/share/nineties-music` | Writable runtime and local-data root |
 | `MUSIC_CREDENTIALS_DIR` | Local-data `.private-state` | Private OAuth token directory; never defaults to the removable player |
-| `MUSIC_SPOTIFY_CLIENT_ID` | unset | Public client ID for the Spotify app |
+| `MUSIC_SPOTIFY_CLIENT_ID` | unset | Optional public client-ID override; users can instead enter it on the local Spotify page |
 | `MUSIC_SPOTIFY_SUPPORT_CONTACT` | unset | Contact shown to development-mode testers for allowlisting |
 | `MUSIC_REQUIRE_PLAYER_VOLUME` | Enabled by the installed web launcher | Disable web downloads unless the player was mounted at startup |
 | `MUSIC_STORAGE_MODE` | `auto` | Select automatic player discovery, `local`, or `simulator` storage |

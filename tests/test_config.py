@@ -111,6 +111,15 @@ def test_web_server_is_bound_to_loopback(tmp_path: Path) -> None:
     assert config.host == "127.0.0.1"
 
 
+def test_spotify_is_not_configured_by_default(tmp_path: Path) -> None:
+    config = AppConfig.from_environment(
+        project_root=tmp_path,
+        environment={"MUSIC_VOLUME_ROOT": str(tmp_path / "missing")},
+    )
+
+    assert config.spotify_client_id is None
+
+
 def test_spotify_configuration_keeps_credentials_off_the_player(tmp_path: Path) -> None:
     volume_root = tmp_path / "Volumes"
     player = volume_root / "Music"

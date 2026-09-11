@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -402,6 +403,62 @@ def test_spotify_page_explains_allowlisting_and_starts_connection(tmp_path: Path
     assert response.headers["Location"].startswith("https://accounts.spotify.com/")
     assert b'href="/spotify/connect"' in page.data
     assert b'action="/spotify/connect"' not in page.data
+
+
+def test_spotify_client_id_can_be_supplied_in_local_ui(tmp_path: Path) -> None:
+    config = AppConfig.from_environment(
+        project_root=tmp_path,
+        environment={"MUSIC_STORAGE_MODE": "local"},
+    )
+    app = create_app(config, start_worker=False)
+    app.testing = True
+    client = app.test_client()
+    supplied_client_id = "A" * 32
+
+    page = client.get("/spotify")
+
+    assert page.status_code == 200
+    assert b'action="/spotify/configure"' in page.data
+    assert b'name="client_id"' in page.data
+    assert b"Create a Spotify app" not in page.data
+    response = client.post(
+        "/spotify/configure",
+        data=csrf_form(app, client_id=supplied_client_id),
+    )
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/spotify?configured=1"
+    stored_path = config.private_state_dir / "spotify-app.json"
+    assert json.loads(stored_path.read_text())["client_id"] == supplied_client_id
+    assert stored_path.stat().st_mode & 0o777 == 0o600
+
+    configured_page = client.get(response.headers["Location"])
+    assert b"Spotify app saved on this computer" in configured_page.data
+    assert b'href="/spotify/connect"' in configured_page.data
+    assert supplied_client_id.encode() not in configured_page.data
+
+    authorization = client.get("/spotify/connect")
+    assert authorization.status_code == 302
+    query = parse_qs(urlparse(authorization.headers["Location"]).query)
+    assert query["client_id"] == [supplied_client_id]
+
+
+def test_spotify_client_id_form_rejects_invalid_value(tmp_path: Path) -> None:
+    config = AppConfig.from_environment(
+        project_root=tmp_path,
+        environment={"MUSIC_STORAGE_MODE": "local"},
+    )
+    app = create_app(config, start_worker=False)
+    app.testing = True
+
+    response = app.test_client().post(
+        "/spotify/configure",
+        data=csrf_form(app, client_id="not valid"),
+    )
+
+    assert response.status_code == 400
+    assert b"Enter a valid Spotify client ID" in response.data
+    assert not (config.private_state_dir / "spotify-app.json").exists()
 
 
 def spotify_job_id(response) -> str:

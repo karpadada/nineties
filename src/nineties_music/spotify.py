@@ -25,6 +25,13 @@ class SpotifyError(RuntimeError):
     pass
 
 
+def spotify_client_id(value: str) -> str:
+    candidate = value.strip()
+    if not 16 <= len(candidate) <= 64 or not candidate.isalnum():
+        raise SpotifyError("Enter a valid Spotify client ID.")
+    return candidate
+
+
 def spotify_playlist_id(value: str) -> str:
     candidate = value.strip()
     if candidate.startswith("spotify:playlist:"):
@@ -78,10 +85,18 @@ class SpotifyClient:
         token = self._read_json(self._token_path)
         return bool(token and (token.get("access_token") or token.get("refresh_token")))
 
+    def configure(self, client_id: str) -> None:
+        validated = spotify_client_id(client_id)
+        if validated != self.client_id:
+            self._token_path.unlink(missing_ok=True)
+            self._pending_path.unlink(missing_ok=True)
+        self._write_json(self._app_path, {"client_id": validated})
+        self.client_id = validated
+
     def begin_authorization(self) -> str:
         if not self.configured:
             raise SpotifyError(
-                "Spotify is not configured. Set MUSIC_SPOTIFY_CLIENT_ID first."
+                "Enter the supplied Spotify client ID before connecting."
             )
         verifier = secrets.token_urlsafe(64)
         challenge = base64.urlsafe_b64encode(

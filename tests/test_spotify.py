@@ -6,7 +6,12 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from nineties_music.spotify import SpotifyClient, SpotifyError, spotify_playlist_id
+from nineties_music.spotify import (
+    SpotifyClient,
+    SpotifyError,
+    spotify_client_id,
+    spotify_playlist_id,
+)
 from nineties_music.spotify_sync import SpotifySyncEngine, best_track_match, score_track
 from nineties_music.simulator import VirtualPlayer
 from nineties_music.store import LibraryStore
@@ -83,6 +88,30 @@ def test_spotify_rejects_bad_playlist_identifiers() -> None:
     assert spotify_playlist_id(f"spotify:playlist:{PLAYLIST_ID}") == PLAYLIST_ID
     with pytest.raises(SpotifyError, match="playlist ID"):
         spotify_playlist_id("https://attacker.example/playlist/123")
+
+
+def test_spotify_client_id_configuration_is_private_and_replaces_tokens(
+    tmp_path: Path,
+) -> None:
+    credentials = tmp_path / "private"
+    credentials.mkdir()
+    token_path = credentials / "spotify-token.json"
+    token_path.write_text('{"access_token": "old"}\n', encoding="utf-8")
+    client = SpotifyClient(
+        None,
+        "http://127.0.0.1:4310/spotify/callback",
+        credentials,
+    )
+
+    client.configure("A" * 32)
+
+    assert client.configured is True
+    assert not token_path.exists()
+    app_path = credentials / "spotify-app.json"
+    assert json.loads(app_path.read_text())["client_id"] == "A" * 32
+    assert app_path.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(SpotifyError, match="valid Spotify client ID"):
+        spotify_client_id("not valid")
 
 
 def test_spotify_playlist_reads_current_items_shape(tmp_path: Path, monkeypatch) -> None:
